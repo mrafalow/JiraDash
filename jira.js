@@ -55,12 +55,16 @@ async function jiraFetch(path, options){
 }
 
 async function jiraSearch(jql, fields, maxResults){
-  const params = new URLSearchParams({
-    jql,
-    fields: fields.join(','),
-    maxResults: String(maxResults || 50)
+  // Legacy /rest/api/3/search is gone (HTTP 410). Use /search/jql (POST).
+  const data = await jiraFetch('/rest/api/3/search/jql', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jql,
+      fields: fields || undefined,
+      maxResults: maxResults || 50
+    })
   });
-  const data = await jiraFetch('/rest/api/3/search?' + params.toString());
   return data.issues || [];
 }
 
@@ -171,31 +175,46 @@ async function fetchSubtasksForParents(keys, currentAccountId, includeRaDescript
  * Credentials never leave the local proxy (see server.js).
  */
 async function fetchJiraData(){
-  // Probe config / auth early for a clear error
-  let me;
+  // /myself needs read:jira-user. Scoped tokens with only read:jira-work will fail here —
+  // continue via search (currentUser() still works under read:jira-work).
+  let currentAccountId = null;
+  let currentUserFirstName = null;
   try{
-    me = await jiraFetch('/rest/api/3/myself');
+    const me = await jiraFetch('/rest/api/3/myself');
+    currentAccountId = me.accountId || null;
+    const displayName = me.displayName || '';
+    currentUserFirstName = displayName.split(/\s+/)[0] || displayName || null;
   } catch(err){
-    if(err.status === 401 || err.status === 403){
-      throw new Error('Jira rejected the credentials in .env (check JIRA_EMAIL and JIRA_API_TOKEN).');
-    }
     if(err.status === 503 || /not configured|missing/i.test(err.message)){
       throw new Error(err.message || 'Jira credentials missing. Set JIRA_EMAIL and JIRA_API_TOKEN in .env.');
+    }
+    if(!(err.status === 401 || err.status === 403)){
+      throw err;
+    }
+    // Scope or classic auth failure on /myself — probe search before hard-failing.
+  }
+
+  const parentFields = ['summary','priority','duedate','created','status','description','customfield_10182','resolutiondate','assignee'];
+
+  let activeIssues;
+  try{
+    activeIssues = await jiraSearch(
+      'project = WDW AND (assignee = currentUser() OR reporter = currentUser()) AND issuetype != Sub-task AND status != Closed ORDER BY duedate ASC',
+      parentFields,
+      50
+    );
+  } catch(err){
+    if(err.status === 401 || err.status === 403){
+      throw new Error('Jira rejected the credentials in .env (check JIRA_EMAIL, JIRA_API_TOKEN, and for scoped tokens JIRA_CLOUD_ID).');
     }
     throw err;
   }
 
-  const currentAccountId = me.accountId;
-  const displayName = me.displayName || '';
-  const currentUserFirstName = displayName.split(/\s+/)[0] || displayName || null;
-
-  const parentFields = ['summary','priority','duedate','created','status','description','customfield_10182','resolutiondate'];
-
-  const activeIssues = await jiraSearch(
-    'project = WDW AND (assignee = currentUser() OR reporter = currentUser()) AND issuetype != Sub-task AND status != Closed ORDER BY duedate ASC',
-    parentFields,
-    50
-  );
+  if(!currentUserFirstName){
+    const sample = activeIssues[0] && activeIssues[0].fields && activeIssues[0].fields.assignee;
+    const dn = sample && (sample.displayName || sample.name);
+    if(dn) currentUserFirstName = String(dn).split(/\s+/)[0];
+  }
 
   const closedIssues = await jiraSearch(
     'project = WDW AND (assignee = currentUser() OR reporter = currentUser()) AND issuetype != Sub-task AND status = Closed ORDER BY resolutiondate DESC',

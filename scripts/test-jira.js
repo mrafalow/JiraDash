@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * First Jira connectivity check (uses .env via the same rules as server.js).
+ * Jira connectivity check (uses .env via the same rules as server.js).
+ * Supports classic site tokens and scoped API tokens (api.atlassian.com + cloudId).
  * Run: npm run test:jira
  */
 'use strict';
@@ -17,57 +18,149 @@ function trimSlash(s){ return String(s || '').replace(/\/+$/, ''); }
 const email = (process.env.JIRA_EMAIL || '').trim();
 const token = (process.env.JIRA_API_TOKEN || '').trim();
 const baseUrl = trimSlash(process.env.JIRA_BASE_URL || '');
-const cloudId = (process.env.JIRA_CLOUD_ID || '').trim();
+let cloudId = (process.env.JIRA_CLOUD_ID || '').trim();
 
 if(!email || !token || (!baseUrl && !cloudId)){
   console.error('FAIL: Set JIRA_EMAIL, JIRA_API_TOKEN, and JIRA_BASE_URL (or JIRA_CLOUD_ID) in .env');
   process.exit(1);
 }
 
-const origin = cloudId
-  ? 'https://api.atlassian.com/ex/jira/' + encodeURIComponent(cloudId)
-  : baseUrl;
-
-const target = new URL('/rest/api/3/myself', origin.endsWith('/') ? origin : origin + '/');
-const auth = Buffer.from(email + ':' + token).toString('base64');
-const lib = target.protocol === 'http:' ? http : https;
-
-const req = lib.request({
-  protocol: target.protocol,
-  hostname: target.hostname,
-  port: target.port || 443,
-  path: target.pathname,
-  method: 'GET',
-  headers: {
-    Authorization: 'Basic ' + auth,
-    Accept: 'application/json',
-    'User-Agent': 'StudioTitanLocal/1.0'
-  }
-}, (res) => {
-  let raw = '';
-  res.on('data', c => raw += c);
-  res.on('end', () => {
-    if(res.statusCode === 401 || res.statusCode === 403){
-      console.error('FAIL: Jira rejected credentials (HTTP ' + res.statusCode + '). Rotate/paste a fresh token in .env as JIRA_API_TOKEN=...');
-      process.exit(1);
+function requestJson(targetUrl, method, bodyObj){
+  return new Promise((resolve, reject) => {
+    const target = typeof targetUrl === 'string' ? new URL(targetUrl) : targetUrl;
+    const auth = Buffer.from(email + ':' + token).toString('base64');
+    const lib = target.protocol === 'http:' ? http : https;
+    const headers = {
+      Authorization: 'Basic ' + auth,
+      Accept: 'application/json',
+      'User-Agent': 'StudioTitanLocal/1.0'
+    };
+    let body = null;
+    if(bodyObj != null){
+      body = JSON.stringify(bodyObj);
+      headers['Content-Type'] = 'application/json';
+      headers['Content-Length'] = Buffer.byteLength(body);
     }
-    if(res.statusCode < 200 || res.statusCode >= 300){
-      console.error('FAIL: HTTP ' + res.statusCode + ' — ' + raw.slice(0, 300));
-      process.exit(1);
-    }
-    try{
-      const me = JSON.parse(raw);
-      console.log('OK: authenticated as', me.displayName || me.emailAddress || me.accountId);
-      console.log('    accountId:', me.accountId);
-      process.exit(0);
-    } catch(e){
-      console.error('FAIL: could not parse response');
-      process.exit(1);
-    }
+    const req = lib.request({
+      protocol: target.protocol,
+      hostname: target.hostname,
+      port: target.port || (target.protocol === 'https:' ? 443 : 80),
+      path: target.pathname + target.search,
+      method: method || 'GET',
+      headers
+    }, (res) => {
+      let raw = '';
+      res.on('data', c => raw += c);
+      res.on('end', () => {
+        let parsed = null;
+        try{ parsed = raw ? JSON.parse(raw) : null; } catch(_){ parsed = null; }
+        resolve({ status: res.statusCode || 0, raw, json: parsed });
+      });
+    });
+    req.on('error', reject);
+    if(body) req.write(body);
+    req.end();
   });
-});
-req.on('error', (err) => {
+}
+
+function fetchTenantCloudId(){
+  if(!baseUrl) return Promise.resolve(null);
+  const target = new URL('/_edge/tenant_info', baseUrl.endsWith('/') ? baseUrl : baseUrl + '/');
+  const lib = target.protocol === 'http:' ? http : https;
+  return new Promise((resolve) => {
+    const req = lib.request({
+      protocol: target.protocol,
+      hostname: target.hostname,
+      port: target.port || 443,
+      path: target.pathname,
+      method: 'GET',
+      headers: { Accept: 'application/json', 'User-Agent': 'StudioTitanLocal/1.0' }
+    }, (res) => {
+      let raw = '';
+      res.on('data', c => raw += c);
+      res.on('end', () => {
+        try{
+          const data = JSON.parse(raw);
+          resolve((data && (data.cloudId || data.cloudid || data.id)) || null);
+        } catch(_){
+          resolve(null);
+        }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.end();
+  });
+}
+
+function originFor(){
+  if(cloudId){
+    return 'https://api.atlassian.com/ex/jira/' + encodeURIComponent(cloudId);
+  }
+  return baseUrl;
+}
+
+function urlOnOrigin(pathname){
+  const origin = trimSlash(originFor());
+  const path = pathname.startsWith('/') ? pathname : '/' + pathname;
+  // Avoid new URL('/abs', origin) which strips /ex/jira/{cloudId}.
+  return new URL(origin + path);
+}
+
+(async function main(){
+  if(!cloudId && baseUrl){
+    const id = await fetchTenantCloudId();
+    if(id){
+      cloudId = String(id).trim();
+      console.log('NOTE: resolved cloudId from site /_edge/tenant_info (scoped gateway).');
+    }
+  }
+
+  const myself = await requestJson(urlOnOrigin('/rest/api/3/myself'), 'GET');
+  if(myself.status >= 200 && myself.status < 300 && myself.json){
+    const me = myself.json;
+    console.log('OK: authenticated as', me.displayName || me.emailAddress || me.accountId);
+    console.log('    accountId:', me.accountId);
+    if(cloudId) console.log('    mode: scoped gateway cloudId=' + cloudId);
+    process.exit(0);
+  }
+
+  const scopeGap = myself.json && /scope/i.test(String(myself.json.message || ''));
+  if(myself.status === 401 || myself.status === 403){
+    // Scoped tokens with only read:jira-work cannot call /myself (needs read:jira-user).
+    // Prove auth via issue search instead.
+    const search = await requestJson(urlOnOrigin('/rest/api/3/search/jql'), 'POST', {
+      jql: 'assignee = currentUser() ORDER BY updated DESC',
+      maxResults: 1,
+      fields: ['summary', 'assignee']
+    });
+    if(search.status >= 200 && search.status < 300){
+      const issues = (search.json && search.json.issues) || [];
+      const name = issues[0] && issues[0].fields && issues[0].fields.assignee
+        && (issues[0].fields.assignee.displayName || issues[0].fields.assignee.emailAddress);
+      console.log('OK: scoped token can search issues' + (name ? (' (assignee sample: ' + name + ')') : ''));
+      if(scopeGap){
+        console.log('NOTE: /myself failed (HTTP ' + myself.status + ', scope gap). Add scope read:jira-user for profile greeting.');
+      } else {
+        console.log('NOTE: /myself failed (HTTP ' + myself.status + '); search/jql succeeded via gateway.');
+      }
+      if(cloudId) console.log('    mode: scoped gateway cloudId=' + cloudId);
+      process.exit(0);
+    }
+    console.error('FAIL: Jira rejected credentials (HTTP ' + myself.status + ' on /myself' +
+      (search.status ? ('; search/jql HTTP ' + search.status) : '') + ').');
+    if(myself.json && myself.json.message) console.error('    myself:', myself.json.message);
+    if(search.json && (search.json.message || search.json.errorMessages)){
+      console.error('    search:', search.json.message || (search.json.errorMessages && search.json.errorMessages.join('; ')));
+    }
+    if(!cloudId){
+      console.error('HINT: scoped API tokens require JIRA_CLOUD_ID and api.atlassian.com/ex/jira/{cloudId}.');
+    }
+    process.exit(1);
+  }
+
+  console.error('FAIL: HTTP ' + myself.status + ' — ' + String(myself.raw || '').slice(0, 300));
+  process.exit(1);
+})().catch((err) => {
   console.error('FAIL:', err.message);
   process.exit(1);
 });
-req.end();
