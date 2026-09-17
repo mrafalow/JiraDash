@@ -253,6 +253,8 @@
   .strip-card-clickable{cursor:pointer;transition:border-color .15s ease, background .15s ease;}
   .strip-card-clickable:hover{border-color:rgba(255,149,0,.45);background:var(--band-orange-bg);}
   .strip-card-clickable:focus-visible{outline:2px solid var(--band-orange);outline-offset:2px;}
+  .strip-card-clickable-blue:hover{border-color:rgba(78,168,245,.5);background:var(--band-blue-bg);}
+  .strip-card-clickable-blue:focus-visible{outline:2px solid var(--band-blue);outline-offset:2px;}
   .publish-light-card{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-width:120px;}
   .light{width:46px;height:46px;border-radius:50%;background:#2a3050;border:2px solid rgba(255,255,255,.08);}
   .light.green{background:var(--green);box-shadow:0 0 22px 4px rgba(52,211,153,.55);}

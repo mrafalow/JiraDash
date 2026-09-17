@@ -10,7 +10,8 @@ let STATE = {
   calYear: todayMid().getFullYear(),
   calMonth: todayMid().getMonth(),
   horizonFilterDay: null,
-  atRiskItems: []
+  atRiskItems: [],
+  waitingItems: []
 };
 
 function iconSvg(name){
@@ -432,6 +433,7 @@ function renderBottomStrip(){
     });
   STATE.atRiskItems = atRisk;
   const waiting = scored.filter(({t, model}) => isWaitingOnOthers(model, t));
+  STATE.waitingItems = waiting;
 
   let publishState = 'off';
   if(dueToday.length){
@@ -466,7 +468,14 @@ function renderBottomStrip(){
         : 'At Risk — all on pace'
     }) +
     strip('calendar', 'var(--band-red)', 'Due Today', dueToday.length, dueToday.length ? 'Needs a look' : 'Nothing due') +
-    strip('users', 'var(--band-blue)', 'Waiting on Others', waiting.length, waiting.length ? 'Sitting with someone else' : 'Nothing stalled') +
+    strip('users', 'var(--band-blue)', 'Waiting on Others', waiting.length, waiting.length ? 'Sitting with someone else' : 'Nothing stalled', {
+      id: 'waitingStrip',
+      clickable: waiting.length > 0,
+      clickableAccent: 'blue',
+      ariaLabel: waiting.length
+        ? 'Waiting on Others — '+waiting.length+' ticket'+(waiting.length===1?'':'s')+' sitting with someone else. Activate to jump to Waiting section.'
+        : 'Waiting on Others — nothing stalled'
+    }) +
     '<div class="strip-card donut-card">' + donutSvg(condCounts, condTotal) +
       '<div class="donut-legend">' +
         legendRow('var(--accent-pink)','Copy',condCounts.COPY) +
@@ -476,12 +485,14 @@ function renderBottomStrip(){
     '</div>';
 
   bindAtRiskStrip();
+  bindWaitingStrip();
 }
 function strip(icon, color, label, value, sub, opts){
   opts = opts || {};
   const clickable = !!opts.clickable;
   const idAttr = opts.id ? ' id="'+escapeAttr(opts.id)+'"' : '';
-  const classes = 'strip-card'+(clickable ? ' strip-card-clickable' : '');
+  const accentClass = clickable && opts.clickableAccent === 'blue' ? ' strip-card-clickable-blue' : '';
+  const classes = 'strip-card'+(clickable ? ' strip-card-clickable' : '')+accentClass;
   const a11y = clickable
     ? ' role="button" tabindex="0" aria-label="'+escapeAttr(opts.ariaLabel || label)+'"'
     : (opts.id ? ' aria-disabled="true"' : '');
@@ -698,6 +709,70 @@ function bindAtRiskStrip(){
     if(e.key === 'Enter' || e.key === ' '){
       e.preventDefault();
       handleAtRiskActivate();
+    }
+  });
+}
+
+/** Waiting-lane cards only — never Needs Attention / Action dual-listed copies. */
+function getWaitingLaneCards(){
+  const list = document.getElementById('ticketList');
+  if(!list) return [];
+  const lane = list.querySelector('.solo-lane[data-lane="waiting"]');
+  if(!lane) return [];
+  return Array.from(lane.querySelectorAll('.nudge-card[data-key], .ticket-card[data-key]'));
+}
+
+function findWaitingTicketCard(key){
+  if(!key) return null;
+  const cards = getWaitingLaneCards();
+  for(let i = 0; i < cards.length; i++){
+    if(cards[i].getAttribute('data-key') === key) return cards[i];
+  }
+  return null;
+}
+
+function scrollToWaitingOnOthers(keys){
+  ensureSoloView();
+  const list = document.getElementById('ticketList');
+  const lane = list && list.querySelector('.solo-lane[data-lane="waiting"]');
+  if(!lane) return false;
+
+  let cards;
+  if(keys && keys.length === 1){
+    const one = findWaitingTicketCard(keys[0]);
+    cards = one ? [one] : getWaitingLaneCards();
+  } else if(keys && keys.length > 1){
+    cards = keys.map(findWaitingTicketCard).filter(Boolean);
+    if(!cards.length) cards = getWaitingLaneCards();
+  } else {
+    cards = getWaitingLaneCards();
+  }
+
+  if(cards.length === 1){
+    cards[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } else {
+    lane.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  cards.forEach(highlightTicketCard);
+  return cards.length > 0;
+}
+
+function handleWaitingActivate(){
+  const items = STATE.waitingItems || [];
+  if(!items.length) return;
+  const keys = items.map(item => item.t && item.t.key).filter(Boolean);
+  scrollToWaitingOnOthers(keys);
+}
+
+function bindWaitingStrip(){
+  const el = document.getElementById('waitingStrip');
+  if(!el) return;
+  if(!el.classList.contains('strip-card-clickable')) return;
+  el.addEventListener('click', handleWaitingActivate);
+  el.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter' || e.key === ' '){
+      e.preventDefault();
+      handleWaitingActivate();
     }
   });
 }
