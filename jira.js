@@ -97,6 +97,22 @@ const DEFAULT_PUBLISH_EARLY_FIELD = 'customfield_10182';
 const DEFAULT_CONTENT_JQL =
   'project = CONTENT AND (reporter = currentUser() OR assignee = currentUser()) AND issuetype != Sub-task AND statusCategory != Done ORDER BY duedate ASC';
 
+const SOLO_PROJECT_KEY = 'WDW';
+
+async function assertSoloProjectVisible(){
+  try{
+    await jiraFetch('/rest/api/3/project/' + encodeURIComponent(SOLO_PROJECT_KEY));
+  } catch(err){
+    if(err.status === 404){
+      throw new Error(
+        'Connected to Jira, but this API token cannot see project ' + SOLO_PROJECT_KEY + '. ' +
+        'The work token may differ from home — use the same token as home (with JIRA_CLOUD_ID) so the Platform gateway can load tickets.'
+      );
+    }
+    throw err;
+  }
+}
+
 function customFieldText(raw){
   if(raw == null || raw === '') return null;
   if(typeof raw === 'string'){
@@ -434,6 +450,10 @@ async function fetchJiraData(){
       throw new Error('Jira rejected the credentials in .env (check JIRA_EMAIL, JIRA_API_TOKEN, and for scoped tokens JIRA_CLOUD_ID).');
     }
     throw err;
+  }
+
+  if(!activeIssues.length){
+    await assertSoloProjectVisible();
   }
 
   // Scoped tokens often lack read:jira-user (/myself 401). Probe assignee =

@@ -93,6 +93,7 @@ function fetchTenantCloudId(){
 }
 
 function originFor(){
+  if(process.env.JIRA_USE_SITE_API === '1' || process.env.JIRA_USE_SITE_API === 'true') return baseUrl;
   if(cloudId){
     return 'https://api.atlassian.com/ex/jira/' + encodeURIComponent(cloudId);
   }
@@ -106,8 +107,14 @@ function urlOnOrigin(pathname){
   return new URL(origin + path);
 }
 
+function wantsScopedGateway(){
+  if(process.env.JIRA_USE_SITE_API === '1' || process.env.JIRA_USE_SITE_API === 'true') return false;
+  if(process.env.JIRA_USE_SCOPED_GATEWAY === '1' || process.env.JIRA_USE_SCOPED_GATEWAY === 'true') return true;
+  return !!cloudId;
+}
+
 (async function main(){
-  if(!cloudId && baseUrl){
+  if(!cloudId && baseUrl && wantsScopedGateway()){
     const id = await fetchTenantCloudId();
     if(id){
       cloudId = String(id).trim();
@@ -128,11 +135,22 @@ function urlOnOrigin(pathname){
   if(myself.status === 401 || myself.status === 403){
     // Scoped tokens with only read:jira-work cannot call /myself (needs read:jira-user).
     // Prove auth via issue search instead.
-    const search = await requestJson(urlOnOrigin('/rest/api/3/search/jql'), 'POST', {
+    const searchPayload = {
       jql: 'assignee = currentUser() ORDER BY updated DESC',
       maxResults: 1,
       fields: ['summary', 'assignee']
-    });
+    };
+    let search = await requestJson(urlOnOrigin('/rest/api/3/search/jql'), 'POST', searchPayload);
+    let viaSiteFallback = false;
+    if((search.status === 401 || search.status === 403) && cloudId && baseUrl &&
+        process.env.JIRA_USE_SITE_API !== '1' && process.env.JIRA_USE_SITE_API !== 'true'){
+      const siteUrl = new URL('/rest/api/3/search/jql', baseUrl.endsWith('/') ? baseUrl : baseUrl + '/');
+      search = await requestJson(siteUrl, 'POST', searchPayload);
+      viaSiteFallback = search.status >= 200 && search.status < 300;
+      if(viaSiteFallback){
+        console.log('NOTE: gateway returned ' + myself.status + '; search/jql succeeded via site URL fallback.');
+      }
+    }
     if(search.status >= 200 && search.status < 300){
       const issues = (search.json && search.json.issues) || [];
       const name = issues[0] && issues[0].fields && issues[0].fields.assignee
@@ -141,9 +159,10 @@ function urlOnOrigin(pathname){
       if(scopeGap){
         console.log('NOTE: /myself failed (HTTP ' + myself.status + ', scope gap). Add scope read:jira-user for profile greeting.');
       } else {
-        console.log('NOTE: /myself failed (HTTP ' + myself.status + '); search/jql succeeded via gateway.');
+        console.log('NOTE: /myself failed (HTTP ' + myself.status + '); search/jql succeeded' +
+          (viaSiteFallback ? ' via site URL (gateway fallback).' : (cloudId ? ' via scoped gateway.' : ' via site URL.')));
       }
-      if(cloudId) console.log('    mode: scoped gateway cloudId=' + cloudId);
+      if(cloudId && !viaSiteFallback) console.log('    mode: scoped gateway cloudId=' + cloudId);
       process.exit(0);
     }
     console.error('FAIL: Jira rejected credentials (HTTP ' + myself.status + ' on /myself' +
@@ -154,6 +173,10 @@ function urlOnOrigin(pathname){
     }
     if(!cloudId){
       console.error('HINT: scoped API tokens require JIRA_CLOUD_ID and api.atlassian.com/ex/jira/{cloudId}.');
+    } else {
+      console.error('HINT: 401 usually means wrong JIRA_EMAIL or JIRA_API_TOKEN.');
+      console.error('      Confirm the email at https://id.atlassian.com/manage-profile/security/api-tokens');
+      console.error('      matches .env exactly, then create a new token (read:jira-work minimum).');
     }
     process.exit(1);
   }
