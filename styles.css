@@ -68,27 +68,38 @@
   .horizon-grid{display:grid;grid-template-columns:minmax(260px,320px) 1fr;gap:18px;align-items:start;}
   @media (max-width:900px){.horizon-grid{grid-template-columns:1fr;}}
   .calendar-panel,.horizon-panel{background:var(--panel);border:1px solid var(--panel-border);border-radius:var(--radius-md);padding:16px 18px 18px;}
-  .cal-month-label{font-family:var(--font-display);font-size:15px;font-weight:600;margin-bottom:12px;color:var(--text-primary);}
+  .cal-month-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;}
+  .cal-month-label{font-family:var(--font-display);font-size:15px;font-weight:600;color:var(--text-primary);text-align:center;flex:1;}
+  .cal-nav-btn{width:30px;height:30px;border-radius:8px;border:1px solid var(--panel-border);background:var(--bg-elevated);color:var(--text-secondary);font-size:18px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s,color .15s;}
+  .cal-nav-btn:hover{background:var(--panel-hover);color:var(--text-primary);}
   .cal-weekdays{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:6px;}
   .cal-weekday{font-size:10px;font-weight:600;color:var(--text-tertiary);text-align:center;letter-spacing:.04em;}
   .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
   .cal-day{aspect-ratio:1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px;font-weight:600;color:var(--text-tertiary);background:transparent;position:relative;min-height:34px;}
   .cal-day.other-month{opacity:.28;}
-  .cal-day.has-due{color:var(--text-primary);background:var(--band-blue-bg);}
-  .cal-day.has-due.heat-2{background:rgba(251,146,60,0.22);color:var(--band-orange);}
-  .cal-day.has-due.heat-3{background:var(--band-red-bg);color:var(--band-red);}
+  .cal-day.has-due-own{color:var(--band-orange);background:var(--band-orange-bg);}
+  .cal-day.has-due-content{color:var(--accent-pink);background:rgba(236,72,153,0.14);}
+  .cal-day.has-due-own.has-due-content{color:var(--text-primary);background:linear-gradient(135deg,var(--band-orange-bg),rgba(236,72,153,0.16));}
   .cal-day.is-today{box-shadow:inset 0 0 0 1.5px var(--band-blue);}
-  .cal-day.is-today.has-due{box-shadow:inset 0 0 0 1.5px var(--band-red);}
+  .cal-day.is-today.has-due-own{box-shadow:inset 0 0 0 1.5px var(--band-orange);}
+  .cal-day.is-today.has-due-content{box-shadow:inset 0 0 0 1.5px var(--accent-pink);}
   .cal-day-num{line-height:1;}
-  .cal-day-mark{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.9;}
+  .cal-day-marks{display:flex;align-items:center;justify-content:center;gap:3px;min-height:5px;}
+  .cal-day-mark{width:5px;height:5px;border-radius:50%;opacity:.95;display:inline-block;}
+  .cal-day-mark.mark-own{background:var(--band-orange);}
+  .cal-day-mark.mark-content{background:var(--accent-pink);}
   .cal-today-note{font-size:12px;color:var(--text-secondary);margin-top:12px;font-weight:500;}
   .cal-today-note.empty{color:var(--text-tertiary);}
   .cal-today-note b{color:var(--text-primary);font-weight:600;}
-  .horizon-list{display:flex;flex-direction:column;gap:8px;}
-  .horizon-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;background:var(--bg-elevated);border:1px solid var(--panel-border);}
+  .cal-legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:11px;color:var(--text-tertiary);font-weight:500;}
+  .cal-legend-item{display:inline-flex;align-items:center;gap:6px;}
+  .horizon-list{display:flex;flex-direction:column;}
+  .horizon-item{display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid var(--panel-border);}
+  .horizon-item:last-child{border-bottom:none;}
   .horizon-rank{font-family:var(--font-display);font-weight:700;font-size:14px;color:var(--text-tertiary);width:18px;flex-shrink:0;}
   .horizon-main{flex:1;min-width:0;}
   .horizon-key{font-size:12px;font-weight:600;color:var(--band-blue);margin-bottom:2px;}
+  .horizon-item.kind-content .horizon-key{color:var(--accent-pink);}
   .horizon-summary{font-size:13px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .horizon-due{font-size:12px;font-weight:600;color:var(--text-secondary);flex-shrink:0;text-align:right;min-width:72px;}
   .horizon-due.overdue{color:var(--band-red);}

@@ -1,7 +1,15 @@
 /* ============================================================
    app.js — wire UI, rendering, and data loading
    ============================================================ */
-let STATE = { data: null, expandedKeys: new Set(), tableMode: 'active', sortKey: null, sortDir: 1 };
+let STATE = {
+  data: null,
+  expandedKeys: new Set(),
+  tableMode: 'active',
+  sortKey: null,
+  sortDir: 1,
+  calYear: todayMid().getFullYear(),
+  calMonth: todayMid().getMonth()
+};
 
 function iconSvg(name){
   const icons = {
@@ -186,6 +194,24 @@ function dueDateKey(d){
   return y+'-'+m+'-'+day;
 }
 
+function isContentTicket(t){
+  return !!(t && t.key && String(t.key).toUpperCase().startsWith('CONTENT-'));
+}
+
+/** Active WDW/own + CONTENT delivery rows for due calendar / next-3. */
+function horizonSourceTickets(){
+  const active = (STATE.data && STATE.data.activeTickets) || [];
+  const content = (STATE.data && STATE.data.contentTickets) || [];
+  const seen = new Set();
+  const out = [];
+  active.concat(content).forEach(t => {
+    if(!t || !t.key || seen.has(t.key)) return;
+    seen.add(t.key);
+    out.push(t);
+  });
+  return out;
+}
+
 function ticketsDueOn(tickets, dayKey){
   return tickets.filter(t => dueDateKey(t.dueDate) === dayKey);
 }
@@ -216,18 +242,41 @@ function horizonDueLabel(dueDate){
   return { text: 'In '+days+'d', cls: '' };
 }
 
+function resetCalendarToCurrentMonth(){
+  const today = todayMid();
+  STATE.calYear = today.getFullYear();
+  STATE.calMonth = today.getMonth();
+}
+
+function shiftCalendarMonth(delta){
+  let y = STATE.calYear;
+  let m = STATE.calMonth + delta;
+  while(m < 0){ m += 12; y -= 1; }
+  while(m > 11){ m -= 12; y += 1; }
+  STATE.calYear = y;
+  STATE.calMonth = m;
+}
+
+function bindCalendarNav(){
+  const root = document.getElementById('dueCalendar');
+  if(!root) return;
+  const prev = root.querySelector('[data-cal-nav="prev"]');
+  const next = root.querySelector('[data-cal-nav="next"]');
+  if(prev) prev.addEventListener('click', () => { shiftCalendarMonth(-1); renderHorizonPanel(); });
+  if(next) next.addEventListener('click', () => { shiftCalendarMonth(1); renderHorizonPanel(); });
+}
+
 function renderHorizonPanel(){
-  const tickets = STATE.data.activeTickets || [];
+  if(!STATE.data) return;
+  const tickets = horizonSourceTickets();
   const today = todayMid();
   const todayKey = dueDateKey(today);
   const dueToday = dueTodayTickets(tickets);
   const next3 = horizonTickets(tickets, 3);
 
-  document.getElementById('horizonWrap').style.display = 'block';
-
-  const year = today.getFullYear();
-  const month = today.getMonth();
-  const monthLabel = today.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const year = STATE.calYear;
+  const month = STATE.calMonth;
+  const monthLabel = new Date(year, month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   const first = new Date(year, month, 1);
   const startPad = first.getDay(); // Sun=0
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -240,20 +289,24 @@ function renderHorizonPanel(){
   for(let day = 1; day <= daysInMonth; day++){
     const key = dueDateKey(new Date(year, month, day));
     const due = ticketsDueOn(tickets, key);
+    const hasOwn = due.some(t => !isContentTicket(t));
+    const hasContent = due.some(t => isContentTicket(t));
     const count = due.length;
-    const heat = count >= 3 ? 'heat-3' : count === 2 ? 'heat-2' : count === 1 ? '' : '';
     const isToday = key === todayKey;
     const title = count
       ? due.map(t => t.key + (t.summary ? ' — ' + t.summary : '')).join('\n')
       : (isToday ? 'Nothing due today' : '');
     const classes = ['cal-day'];
-    if(count) classes.push('has-due');
-    if(heat) classes.push(heat);
+    if(hasOwn) classes.push('has-due-own');
+    if(hasContent) classes.push('has-due-content');
     if(isToday) classes.push('is-today');
+    const marks = [];
+    if(hasOwn) marks.push('<span class="cal-day-mark mark-own" title="WDW / own"></span>');
+    if(hasContent) marks.push('<span class="cal-day-mark mark-content" title="CONTENT"></span>');
     cells.push(
       '<div class="'+classes.join(' ')+'"'+(title ? ' title="'+escapeAttr(title)+'"' : '')+'>' +
         '<span class="cal-day-num">'+day+'</span>' +
-        (count ? '<span class="cal-day-mark"></span>' : '') +
+        (marks.length ? '<span class="cal-day-marks">'+marks.join('')+'</span>' : '') +
       '</div>'
     );
   }
@@ -265,15 +318,28 @@ function renderHorizonPanel(){
       }).join(', ')+'</div>'
     : '<div class="cal-today-note empty">Nothing due today</div>';
 
+  const legend =
+    '<div class="cal-legend">' +
+      '<span class="cal-legend-item"><span class="cal-day-mark mark-own"></span> WDW / own</span>' +
+      '<span class="cal-legend-item"><span class="cal-day-mark mark-content"></span> CONTENT</span>' +
+    '</div>';
+
   document.getElementById('dueCalendar').innerHTML =
-    '<div class="cal-month-label">'+escapeHtml(monthLabel)+'</div>' +
+    '<div class="cal-month-row">' +
+      '<button type="button" class="cal-nav-btn" data-cal-nav="prev" aria-label="Previous month">‹</button>' +
+      '<div class="cal-month-label">'+escapeHtml(monthLabel)+'</div>' +
+      '<button type="button" class="cal-nav-btn" data-cal-nav="next" aria-label="Next month">›</button>' +
+    '</div>' +
     '<div class="cal-weekdays">'+weekdays.map(w => '<div class="cal-weekday">'+w+'</div>').join('')+'</div>' +
     '<div class="cal-grid">'+cells.join('')+'</div>' +
-    todayNote;
+    todayNote +
+    legend;
+
+  bindCalendarNav();
 
   if(!next3.length){
     document.getElementById('horizonList').innerHTML =
-      '<div class="horizon-empty">No upcoming due dates on Active Requests</div>';
+      '<div class="horizon-empty">No upcoming due dates on Active or CONTENT tickets</div>';
   } else {
     document.getElementById('horizonList').innerHTML =
       '<div class="horizon-list">'+next3.map((t, i) => {
@@ -282,7 +348,8 @@ function renderHorizonPanel(){
         const keyHtml = tLink
           ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+escapeHtml(t.key)+'</a>'
           : escapeHtml(t.key);
-        return '<div class="horizon-item">' +
+        const kind = isContentTicket(t) ? 'content' : 'own';
+        return '<div class="horizon-item kind-'+kind+'">' +
           '<div class="horizon-rank">'+(i+1)+'</div>' +
           '<div class="horizon-main">' +
             '<div class="horizon-key">'+keyHtml+'</div>' +
@@ -866,10 +933,15 @@ document.querySelectorAll('.nav-item[data-view]').forEach(el => {
     el.classList.add('active');
     const view = el.getAttribute('data-view');
     document.getElementById('viewSolo').style.display = view === 'solo' ? 'block' : 'none';
+    document.getElementById('viewHorizon').style.display = view === 'horizon' ? 'block' : 'none';
     document.getElementById('viewRequests').style.display = view === 'requests' ? 'block' : 'none';
     document.getElementById('viewTranslations').style.display = view === 'translations' ? 'block' : 'none';
     document.getElementById('viewCopy').style.display = view === 'copy' ? 'block' : 'none';
     document.getElementById('viewConfig').style.display = view === 'config' ? 'block' : 'none';
+    if(view === 'horizon'){
+      resetCalendarToCurrentMonth();
+      if(STATE.data) renderHorizonPanel();
+    }
     if(view === 'config') populateConfigForm();
   });
 });
