@@ -85,12 +85,52 @@ function mapAssignee(fields, currentAccountId){
   };
 }
 
-function publishEarlyValue(fields){
-  const raw = fields.customfield_10182;
-  if(raw == null) return null;
-  if(typeof raw === 'string') return raw;
-  if(typeof raw === 'object' && raw.value != null) return String(raw.value);
+/** Discovered via /rest/api/3/field (name "Partner"). Override with JIRA_PARTNER_FIELD in .env. */
+const DEFAULT_PARTNER_FIELD = 'customfield_10329';
+/** Publish Early radio — already used historically as customfield_10182. */
+const DEFAULT_PUBLISH_EARLY_FIELD = 'customfield_10182';
+
+function customFieldText(raw){
+  if(raw == null || raw === '') return null;
+  if(typeof raw === 'string'){
+    const s = raw.trim();
+    return s || null;
+  }
+  if(Array.isArray(raw)){
+    const parts = raw.map(customFieldText).filter(Boolean);
+    return parts.length ? parts.join(', ') : null;
+  }
+  if(typeof raw === 'object'){
+    if(raw.value != null) return String(raw.value);
+    if(raw.displayName != null) return String(raw.displayName);
+    if(raw.name != null) return String(raw.name);
+  }
   return null;
+}
+
+function publishEarlyValue(fields, fieldId){
+  return customFieldText(fields[fieldId || DEFAULT_PUBLISH_EARLY_FIELD]);
+}
+
+function partnerValue(fields, fieldId){
+  return customFieldText(fields[fieldId || DEFAULT_PARTNER_FIELD]);
+}
+
+async function resolveCustomFieldIds(){
+  try{
+    const res = await fetch('/api/config');
+    if(res.ok){
+      const cfg = await res.json();
+      return {
+        partnerField: (cfg && cfg.partnerField) || DEFAULT_PARTNER_FIELD,
+        publishEarlyField: (cfg && cfg.publishEarlyField) || DEFAULT_PUBLISH_EARLY_FIELD
+      };
+    }
+  } catch(_){ /* use defaults */ }
+  return {
+    partnerField: DEFAULT_PARTNER_FIELD,
+    publishEarlyField: DEFAULT_PUBLISH_EARLY_FIELD
+  };
 }
 
 function mapSubtask(issue, currentAccountId, includeDescription){
@@ -125,19 +165,21 @@ function groupByParent(subtaskIssues, currentAccountId, includeRaDescription){
   return byParent;
 }
 
-function mapActiveTicket(issue, subtasksByParent, currentAccountId){
+function mapActiveTicket(issue, subtasksByParent, currentAccountId, fieldIds){
   const f = issue.fields || {};
   const subtasks = (subtasksByParent[issue.key] || []).slice();
   const ticketDesc = descriptionToText(f.description);
   const ra = subtasks.find(s => s.type === 'RA');
   const override = doNotPublishEarlyFromText(ticketDesc) || doNotPublishEarlyFromText(ra && ra.description);
+  const ids = fieldIds || {};
   return {
     key: issue.key,
     summary: f.summary || '',
     priority: mapPriority(f),
     createdDate: datePrefix(f.created),
     dueDate: datePrefix(f.duedate),
-    publishEarlyField: publishEarlyValue(f),
+    partner: partnerValue(f, ids.partnerField),
+    publishEarlyField: publishEarlyValue(f, ids.publishEarlyField),
     doNotPublishEarlyOverride: !!override,
     subtasks
   };
@@ -194,7 +236,12 @@ async function fetchJiraData(){
     // Scope or classic auth failure on /myself — probe search before hard-failing.
   }
 
-  const parentFields = ['summary','priority','duedate','created','status','description','customfield_10182','resolutiondate','assignee'];
+  const fieldIds = await resolveCustomFieldIds();
+  const parentFields = [
+    'summary','priority','duedate','created','status','description',
+    fieldIds.publishEarlyField, fieldIds.partnerField,
+    'resolutiondate','assignee'
+  ];
 
   let activeIssues;
   try{
@@ -245,7 +292,7 @@ async function fetchJiraData(){
 
   return {
     currentUserFirstName,
-    activeTickets: activeIssues.map(i => mapActiveTicket(i, activeSubs, currentAccountId)),
+    activeTickets: activeIssues.map(i => mapActiveTicket(i, activeSubs, currentAccountId, fieldIds)),
     recentlyClosedTickets: closedIssues.map(i => mapClosedTicket(i, closedSubs, currentAccountId))
   };
 }

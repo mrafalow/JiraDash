@@ -252,6 +252,15 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Non-secret field IDs (override Partner via JIRA_PARTNER_FIELD in .env when needed).
+  if(pathname === '/api/config'){
+    sendJson(res, 200, {
+      partnerField: (process.env.JIRA_PARTNER_FIELD || '').trim() || 'customfield_10329',
+      publishEarlyField: (process.env.JIRA_PUBLISH_EARLY_FIELD || '').trim() || 'customfield_10182'
+    });
+    return;
+  }
+
   if(pathname.startsWith('/api/jira/')){
     const rest = pathname.slice('/api/jira'.length) + u.search;
     proxyJira(req, res, rest);

@@ -294,6 +294,19 @@ function donutSvg(counts, total){
   '</svg>';
 }
 
+function formatPublishEarlyCell(value){
+  if(value == null || value === '') return '';
+  const s = String(value).trim();
+  if(/^yes$/i.test(s)) return '<span class="publish-early yes">Yes</span>';
+  if(/^no$/i.test(s)) return '<span class="publish-early no">No</span>';
+  return escapeHtml(s);
+}
+
+function formatPartnerCell(value){
+  if(value == null || value === '') return '';
+  return escapeHtml(String(value));
+}
+
 function renderTable(){
   const wrap = document.getElementById('tableWrap');
   const isActive = STATE.tableMode === 'active';
@@ -305,7 +318,7 @@ function renderTable(){
   }
 
   const cols = isActive
-    ? [['key','Ticket'],['summary','Summary'],['priority','Priority'],['dueDate','Due Date'],['stage','Current Stage']]
+    ? [['key','Ticket'],['summary','Summary'],['priority','Priority'],['dueDate','Due Date'],['partner','Partner'],['publishEarly','Publish Early'],['stage','Current Stage']]
     : [['key','Ticket'],['summary','Summary'],['priority','Priority'],['closedDate','Closed Date'],['translations','Translations']];
 
   const html = '<table class="data-table"><thead><tr>' +
@@ -321,12 +334,23 @@ function renderTable(){
       const translationsPending = translations && translations.status !== 'Closed';
       const tLink = jiraLink(t.key);
       const keyHtml = tLink ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+t.key+'</a>' : t.key;
+      if(isActive){
+        return '<tr>' +
+          '<td class="primary">'+keyHtml+'</td>' +
+          '<td>'+escapeHtml(t.summary)+'</td>' +
+          '<td>'+(t.priority||'').replace(/^\d+ - /,'')+'</td>' +
+          '<td>'+fmtDate(t.dueDate)+'</td>' +
+          '<td class="partner-cell">'+formatPartnerCell(t.partner)+'</td>' +
+          '<td class="publish-early-cell">'+formatPublishEarlyCell(t.publishEarlyField)+'</td>' +
+          '<td>'+stageHtml+'</td>' +
+        '</tr>';
+      }
       return '<tr>' +
         '<td class="primary">'+keyHtml+'</td>' +
         '<td>'+escapeHtml(t.summary)+'</td>' +
         '<td>'+(t.priority||'').replace(/^\d+ - /,'')+'</td>' +
-        '<td>'+(isActive ? fmtDate(t.dueDate) : fmtDate(t.closedDate))+'</td>' +
-        '<td>'+(isActive ? stageHtml : (translationsPending ? '<span class="pending-note">● Translations pending</span>' : 'All closed'))+'</td>' +
+        '<td>'+fmtDate(t.closedDate)+'</td>' +
+        '<td>'+(translationsPending ? '<span class="pending-note">● Translations pending</span>' : 'All closed')+'</td>' +
       '</tr>';
     }).join('') +
     '</tbody></table>';
