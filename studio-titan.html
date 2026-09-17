@@ -38,11 +38,10 @@
     </div>
 
     <div class="nav-section-label">TEAMS</div>
-    <div class="nav-item" data-view="copy"><div class="dot-badge" style="background:#ec4899;">CP</div><span class="label">Copy</span></div>
-    <div class="nav-item disabled"><div class="dot-badge" style="background:#fb923c;">MD</div><span class="label">Media</span></div>
-    <div class="nav-item disabled"><div class="dot-badge" style="background:#f4c430;">AT</div><span class="label">Alt Text &amp; Captions</span></div>
+    <div class="nav-item disabled" data-view="copy" id="navCopy"><div class="dot-badge" style="background:#ec4899;">CP</div><span class="label">Copy</span></div>
+    <div class="nav-item disabled" data-view="media" id="navMedia"><div class="dot-badge" style="background:#fb923c;">MD</div><span class="label">Media</span></div>
+    <div class="nav-item disabled" data-view="alttext" id="navAlttext"><div class="dot-badge" style="background:#f4c430;">AT</div><span class="label">Alt Text &amp; Captions</span></div>
     <div class="nav-item" data-view="translations"><div class="dot-badge" style="background:#4ea8f5;">TR</div><span class="label">Translations</span></div>
-    <div class="nav-item disabled"><div class="dot-badge" style="background:#8b5cf6;">MS</div><span class="label">Managed Services</span></div>
 
     <div class="sidebar-spacer"></div>
     <div class="nav-item" data-view="config">
@@ -78,12 +77,6 @@
 
       <section class="panel-block" id="bottomStripWrap" style="display:none;">
         <div class="bottom-strip" id="bottomStrip"></div>
-      </section>
-
-      <section class="panel-block" id="contentDeliverySolo">
-        <div class="section-title">CONTENT &mdash; DELIVERY OWNED (MANAGED ELSEWHERE)</div>
-        <div class="content-hint">Tickets you are accountable for delivering; day-to-day work sits with another group.</div>
-        <div id="contentListSolo"><div class="loading-wrap"><div class="spinner"></div>Loading&hellip;</div></div>
       </section>
     </div>
 
@@ -127,6 +120,20 @@
       <section class="panel-block">
         <div class="section-title">COPY &mdash; OPEN SUB-TASKS ACROSS YOUR ACTIVE TICKETS</div>
         <div id="copyWrap"><div class="loading-wrap"><div class="spinner"></div>Loading&hellip;</div></div>
+      </section>
+    </div>
+
+    <div id="viewMedia" style="display:none;">
+      <section class="panel-block">
+        <div class="section-title">MEDIA &mdash; OPEN SUB-TASKS ACROSS YOUR ACTIVE TICKETS</div>
+        <div id="mediaWrap"><div class="loading-wrap"><div class="spinner"></div>Loading&hellip;</div></div>
+      </section>
+    </div>
+
+    <div id="viewAlttext" style="display:none;">
+      <section class="panel-block">
+        <div class="section-title">ALT TEXT &amp; CAPTIONS &mdash; OPEN SUB-TASKS ACROSS YOUR ACTIVE TICKETS</div>
+        <div id="alttextWrap"><div class="loading-wrap"><div class="spinner"></div>Loading&hellip;</div></div>
       </section>
     </div>
 

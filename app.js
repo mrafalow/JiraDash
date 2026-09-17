@@ -487,20 +487,23 @@ function renderContentListHtml(tickets){
     '</tbody></table>';
 }
 
-/** Footer section shared by Solo + Active — never mixed into fire lanes. */
+/** CONTENT delivery footer under Active & Closed only — never mixed into fire lanes or Solo. */
 function renderContentDelivery(){
   const tickets = (STATE.data && STATE.data.contentTickets) || [];
   const html = renderContentListHtml(tickets);
-  const solo = document.getElementById('contentListSolo');
   const active = document.getElementById('contentListActive');
-  if(solo) solo.innerHTML = html;
   if(active) active.innerHTML = html;
+}
+
+function recentlyClosedOwnTickets(){
+  return ((STATE.data && STATE.data.recentlyClosedTickets) || []).filter(t => !isContentTicket(t));
 }
 
 function renderTable(){
   const wrap = document.getElementById('tableWrap');
   const isActive = STATE.tableMode === 'active';
-  const rows = isActive ? STATE.data.activeTickets : STATE.data.recentlyClosedTickets;
+  // Recently Closed is WDW/own closed only — never CONTENT delivery tickets.
+  const rows = isActive ? (STATE.data.activeTickets || []) : recentlyClosedOwnTickets();
 
   if(!rows.length){
     wrap.innerHTML = '<div class="empty-state"><b>Nothing here yet</b>'+(isActive?'No active requests right now.':'No recently closed tickets to show.')+'</div>';
@@ -550,11 +553,11 @@ function renderTable(){
 function renderTranslations(){
   const wrap = document.getElementById('translationsWrap');
   const entries = [];
-  (STATE.data.activeTickets || []).forEach(t => {
+  (data.activeTickets || []).forEach(t => {
     const st = (t.subtasks || []).find(s => s.type === 'TRANSLATIONS');
     if(st) entries.push({ ticket: t, st });
   });
-  (STATE.data.recentlyClosedTickets || []).forEach(t => {
+  recentlyClosedOwnTickets().forEach(t => {
     const st = (t.subtasks || []).find(s => s.type === 'TRANSLATIONS');
     if(st) entries.push({ ticket: t, st });
   });
@@ -592,16 +595,30 @@ function renderTranslations(){
   wrap.innerHTML = html;
 }
 
-function renderCopy(){
-  const wrap = document.getElementById('copyWrap');
+const TEAM_VIEWS = {
+  copy: { type: 'COPY', wrapId: 'copyWrap', navId: 'navCopy', label: 'Copy' },
+  media: { type: 'MEDIA', wrapId: 'mediaWrap', navId: 'navMedia', label: 'Media' },
+  alttext: { type: 'ALTTEXT', wrapId: 'alttextWrap', navId: 'navAlttext', label: 'Alt Text & Captions' }
+};
+
+function openTeamSubtaskEntries(type){
   const entries = [];
-  (STATE.data.activeTickets || []).forEach(t => {
-    const st = (t.subtasks || []).find(s => s.type === 'COPY');
+  ((STATE.data && STATE.data.activeTickets) || []).forEach(t => {
+    const st = (t.subtasks || []).find(s => s.type === type);
     if(st && st.status !== 'Closed') entries.push({ ticket: t, st });
   });
+  return entries;
+}
+
+function renderTeamSubtaskView(viewKey){
+  const cfg = TEAM_VIEWS[viewKey];
+  if(!cfg) return;
+  const wrap = document.getElementById(cfg.wrapId);
+  if(!wrap) return;
+  const entries = openTeamSubtaskEntries(cfg.type);
 
   if(!entries.length){
-    wrap.innerHTML = '<div class="empty-state"><b>Nothing open right now</b>Open Copy sub-tasks will show up here once one exists on an active ticket.</div>';
+    wrap.innerHTML = '<div class="empty-state"><b>Nothing open right now</b>Open '+escapeHtml(cfg.label)+' sub-tasks will show up here once one exists on an active ticket.</div>';
     return;
   }
 
@@ -624,6 +641,25 @@ function renderCopy(){
     }).join('') +
     '</tbody></table>';
   wrap.innerHTML = html;
+}
+
+function renderCopy(){ renderTeamSubtaskView('copy'); }
+function renderMedia(){ renderTeamSubtaskView('media'); }
+function renderAlttext(){ renderTeamSubtaskView('alttext'); }
+
+/** Enable Copy / Media / Alt Text nav only when matching open sub-tasks exist. */
+function updateTeamNavAvailability(){
+  Object.keys(TEAM_VIEWS).forEach(viewKey => {
+    const cfg = TEAM_VIEWS[viewKey];
+    const nav = document.getElementById(cfg.navId);
+    if(!nav) return;
+    const hasMatches = openTeamSubtaskEntries(cfg.type).length > 0;
+    nav.classList.toggle('disabled', !hasMatches);
+    if(!hasMatches && nav.classList.contains('active')){
+      const solo = document.querySelector('.nav-item[data-view="solo"]');
+      if(solo) solo.click();
+    }
+  });
 }
 
 const LOADING_MESSAGES = [
@@ -659,6 +695,9 @@ async function loadAll(spinning){
     renderContentDelivery();
     renderTranslations();
     renderCopy();
+    renderMedia();
+    renderAlttext();
+    updateTeamNavAvailability();
   } catch(err){
     document.getElementById('ticketList').innerHTML =
       '<div class="error-box">Could not load your board: '+escapeHtml(err.message)+'<br><button type="button" id="retryBtn">Retry</button></div>';
@@ -666,10 +705,9 @@ async function loadAll(spinning){
     if(retry) retry.addEventListener('click', () => loadAll(true));
     document.getElementById('greetingSub').textContent = 'Something went wrong loading your board.';
     const emptyContent = '<div class="content-empty">Could not load CONTENT tickets.</div>';
-    const solo = document.getElementById('contentListSolo');
     const active = document.getElementById('contentListActive');
-    if(solo) solo.innerHTML = emptyContent;
     if(active) active.innerHTML = emptyContent;
+    updateTeamNavAvailability();
   } finally {
     clearInterval(rotateInterval);
     if(spinning) btn.classList.remove('spinning');
@@ -729,6 +767,9 @@ function saveConfig(){
     renderContentDelivery();
     renderTranslations();
     renderCopy();
+    renderMedia();
+    renderAlttext();
+    updateTeamNavAvailability();
   }
 }
 
@@ -744,6 +785,7 @@ document.getElementById('collapseBtn').addEventListener('click', () => {
 });
 document.querySelectorAll('.nav-item[data-view]').forEach(el => {
   el.addEventListener('click', () => {
+    if(el.classList.contains('disabled')) return;
     document.querySelectorAll('.nav-item[data-view]').forEach(n => n.classList.remove('active'));
     el.classList.add('active');
     const view = el.getAttribute('data-view');
@@ -752,6 +794,8 @@ document.querySelectorAll('.nav-item[data-view]').forEach(el => {
     document.getElementById('viewRequests').style.display = view === 'requests' ? 'block' : 'none';
     document.getElementById('viewTranslations').style.display = view === 'translations' ? 'block' : 'none';
     document.getElementById('viewCopy').style.display = view === 'copy' ? 'block' : 'none';
+    document.getElementById('viewMedia').style.display = view === 'media' ? 'block' : 'none';
+    document.getElementById('viewAlttext').style.display = view === 'alttext' ? 'block' : 'none';
     document.getElementById('viewConfig').style.display = view === 'config' ? 'block' : 'none';
     if(view === 'horizon'){
       resetCalendarToCurrentMonth();

@@ -218,6 +218,10 @@ function normalizeFetchedData(data){
   };
   (data.activeTickets || []).forEach(fixTicket);
   (data.recentlyClosedTickets || []).forEach(fixTicket);
+  // Recently Closed must stay WDW/own — never CONTENT delivery keys.
+  data.recentlyClosedTickets = (data.recentlyClosedTickets || []).filter(t => {
+    return !(t && t.key && String(t.key).toUpperCase().startsWith('CONTENT-'));
+  });
   // CONTENT delivery rows stay out of Solo lanes; light due-date order only.
   if(!Array.isArray(data.contentTickets)) data.contentTickets = [];
   data.contentTickets = data.contentTickets.slice().sort((a, b) => {
