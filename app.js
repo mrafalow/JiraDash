@@ -487,12 +487,20 @@ function renderContentListHtml(tickets){
     '</tbody></table>';
 }
 
+/** CONTENT delivery footer under Active Requests only — hidden on Recently Closed. */
+function updateContentFooterVisibility(){
+  const footer = document.getElementById('contentDeliveryActive');
+  if(!footer) return;
+  footer.style.display = STATE.tableMode === 'active' ? '' : 'none';
+}
+
 /** CONTENT delivery footer under Active & Closed only — never mixed into fire lanes or Solo. */
 function renderContentDelivery(){
   const tickets = (STATE.data && STATE.data.contentTickets) || [];
   const html = renderContentListHtml(tickets);
   const active = document.getElementById('contentListActive');
   if(active) active.innerHTML = html;
+  updateContentFooterVisibility();
 }
 
 function recentlyClosedOwnTickets(){
@@ -810,12 +818,14 @@ document.getElementById('toggleActive').addEventListener('click', () => {
   document.getElementById('toggleActive').classList.add('active');
   document.getElementById('toggleClosed').classList.remove('active');
   renderTable();
+  updateContentFooterVisibility();
 });
 document.getElementById('toggleClosed').addEventListener('click', () => {
   STATE.tableMode = 'closed';
   document.getElementById('toggleClosed').classList.add('active');
   document.getElementById('toggleActive').classList.remove('active');
   renderTable();
+  updateContentFooterVisibility();
 });
 document.getElementById('configSaveBtn').addEventListener('click', saveConfig);
 document.getElementById('configResetBtn').addEventListener('click', resetConfigToDefaults);
