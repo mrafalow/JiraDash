@@ -89,6 +89,13 @@ function mapAssignee(fields, currentAccountId){
 const DEFAULT_PARTNER_FIELD = 'customfield_10329';
 /** Publish Early radio — already used historically as customfield_10182. */
 const DEFAULT_PUBLISH_EARLY_FIELD = 'customfield_10182';
+/**
+ * CONTENT delivery ownership (Step 6).
+ * Verified live: reporter = currentUser() OR assignee = currentUser() → 5 open parents
+ * (all reporter=Marcin, assignee=MS). watcher = currentUser() → 0. Override with JIRA_CONTENT_JQL.
+ */
+const DEFAULT_CONTENT_JQL =
+  'project = CONTENT AND (reporter = currentUser() OR assignee = currentUser()) AND issuetype != Sub-task AND statusCategory != Done ORDER BY duedate ASC';
 
 function customFieldText(raw){
   if(raw == null || raw === '') return null;
@@ -123,13 +130,15 @@ async function resolveCustomFieldIds(){
       const cfg = await res.json();
       return {
         partnerField: (cfg && cfg.partnerField) || DEFAULT_PARTNER_FIELD,
-        publishEarlyField: (cfg && cfg.publishEarlyField) || DEFAULT_PUBLISH_EARLY_FIELD
+        publishEarlyField: (cfg && cfg.publishEarlyField) || DEFAULT_PUBLISH_EARLY_FIELD,
+        contentJql: (cfg && cfg.contentJql) || null
       };
     }
   } catch(_){ /* use defaults */ }
   return {
     partnerField: DEFAULT_PARTNER_FIELD,
-    publishEarlyField: DEFAULT_PUBLISH_EARLY_FIELD
+    publishEarlyField: DEFAULT_PUBLISH_EARLY_FIELD,
+    contentJql: null
   };
 }
 
@@ -195,6 +204,41 @@ function mapClosedTicket(issue, subtasksByParent, currentAccountId){
     closedDate: datePrefix(f.resolutiondate),
     subtasks: (subtasksByParent[issue.key] || []).slice()
   };
+}
+
+/** CONTENT- delivery remotes — flat row for footer section (not scored into Solo lanes). */
+function mapContentTicket(issue, currentAccountId, fieldIds){
+  const f = issue.fields || {};
+  const assignee = mapAssignee(f, currentAccountId);
+  const ids = fieldIds || {};
+  return {
+    key: issue.key,
+    summary: f.summary || '',
+    status: mapStatusName(f),
+    assigneeName: assignee.assigneeName,
+    dueDate: datePrefix(f.duedate),
+    partner: partnerValue(f, ids.partnerField),
+    priority: mapPriority(f)
+  };
+}
+
+async function fetchContentTickets(currentAccountId, fieldIds){
+  const jql = (fieldIds && fieldIds.contentJql) || DEFAULT_CONTENT_JQL;
+  const fields = [
+    'summary', 'status', 'assignee', 'duedate', 'priority',
+    fieldIds.partnerField || DEFAULT_PARTNER_FIELD
+  ];
+  try{
+    const issues = await jiraSearch(jql, fields, 50);
+    return {
+      jql,
+      tickets: issues.map(i => mapContentTicket(i, currentAccountId, fieldIds))
+    };
+  } catch(err){
+    // CONTENT project may be unavailable for some tokens — keep WDW board working.
+    console.warn('[jira] CONTENT fetch failed:', err.message || err);
+    return { jql, tickets: [], error: err.message || String(err) };
+  }
 }
 
 async function fetchSubtasksForParents(keys, currentAccountId, includeRaDescription){
@@ -285,14 +329,17 @@ async function fetchJiraData(){
   const activeKeys = activeIssues.map(i => i.key);
   const closedKeys = closedIssues.map(i => i.key);
 
-  const [activeSubs, closedSubs] = await Promise.all([
+  const [activeSubs, closedSubs, contentResult] = await Promise.all([
     fetchSubtasksForParents(activeKeys, currentAccountId, true),
-    fetchSubtasksForParents(closedKeys, currentAccountId, false)
+    fetchSubtasksForParents(closedKeys, currentAccountId, false),
+    fetchContentTickets(currentAccountId, fieldIds)
   ]);
 
   return {
     currentUserFirstName,
     activeTickets: activeIssues.map(i => mapActiveTicket(i, activeSubs, currentAccountId, fieldIds)),
-    recentlyClosedTickets: closedIssues.map(i => mapClosedTicket(i, closedSubs, currentAccountId))
+    recentlyClosedTickets: closedIssues.map(i => mapClosedTicket(i, closedSubs, currentAccountId)),
+    contentTickets: contentResult.tickets || [],
+    contentJql: contentResult.jql || DEFAULT_CONTENT_JQL
   };
 }

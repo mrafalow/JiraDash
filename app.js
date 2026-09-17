@@ -384,6 +384,52 @@ function formatPartnerCell(value){
   return escapeHtml(String(value));
 }
 
+function contentDueLabel(dueDate){
+  if(!dueDate) return '—';
+  const today = todayMid();
+  const due = atMidnight(dueDate);
+  if(isNaN(due.getTime())) return fmtDate(dueDate);
+  const days = businessDaysBetween(today, due);
+  const pretty = fmtDate(dueDate);
+  if(days === 0) return pretty + ' · Today';
+  if(days < 0) return pretty + ' · ' + Math.abs(days) + 'd overdue';
+  return pretty;
+}
+
+function renderContentListHtml(tickets){
+  if(!tickets.length){
+    return '<div class="content-empty">No open CONTENT tickets you own for delivery right now.</div>';
+  }
+  return '<table class="content-table"><thead><tr>' +
+    '<th>Key</th><th>Summary</th><th>Status</th><th>Assignee</th><th>Due</th><th>Partner</th>' +
+    '</tr></thead><tbody>' +
+    tickets.map(t => {
+      const tLink = jiraLink(t.key);
+      const keyHtml = tLink
+        ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+escapeHtml(t.key)+'</a>'
+        : escapeHtml(t.key);
+      return '<tr>' +
+        '<td class="primary">'+keyHtml+'</td>' +
+        '<td class="content-summary">'+escapeHtml(t.summary || '')+'</td>' +
+        '<td>'+escapeHtml(t.status || '—')+'</td>' +
+        '<td>'+(t.assigneeName ? escapeHtml(t.assigneeName) : '—')+'</td>' +
+        '<td>'+escapeHtml(contentDueLabel(t.dueDate))+'</td>' +
+        '<td class="partner-cell">'+(t.partner ? formatPartnerCell(t.partner) : '—')+'</td>' +
+      '</tr>';
+    }).join('') +
+    '</tbody></table>';
+}
+
+/** Footer section shared by Solo + Active — never mixed into fire lanes. */
+function renderContentDelivery(){
+  const tickets = (STATE.data && STATE.data.contentTickets) || [];
+  const html = renderContentListHtml(tickets);
+  const solo = document.getElementById('contentListSolo');
+  const active = document.getElementById('contentListActive');
+  if(solo) solo.innerHTML = html;
+  if(active) active.innerHTML = html;
+}
+
 function renderTable(){
   const wrap = document.getElementById('tableWrap');
   const isActive = STATE.tableMode === 'active';
@@ -543,6 +589,7 @@ async function loadAll(spinning){
     renderTicketList();
     renderBottomStrip();
     renderTable();
+    renderContentDelivery();
     renderTranslations();
     renderCopy();
   } catch(err){
@@ -551,6 +598,11 @@ async function loadAll(spinning){
     const retry = document.getElementById('retryBtn');
     if(retry) retry.addEventListener('click', () => loadAll(true));
     document.getElementById('greetingSub').textContent = 'Something went wrong loading your board.';
+    const emptyContent = '<div class="content-empty">Could not load CONTENT tickets.</div>';
+    const solo = document.getElementById('contentListSolo');
+    const active = document.getElementById('contentListActive');
+    if(solo) solo.innerHTML = emptyContent;
+    if(active) active.innerHTML = emptyContent;
   } finally {
     clearInterval(rotateInterval);
     if(spinning) btn.classList.remove('spinning');
@@ -607,6 +659,7 @@ function saveConfig(){
     renderTicketList();
     renderBottomStrip();
     renderTable();
+    renderContentDelivery();
     renderTranslations();
     renderCopy();
   }

@@ -9,6 +9,8 @@
  *   JIRA_API_TOKEN=...
  * Optional for scoped API tokens:
  *   JIRA_CLOUD_ID=<cloud id>
+ * Optional CONTENT delivery JQL override (Step 6):
+ *   JIRA_CONTENT_JQL=project = CONTENT AND ...
  */
 'use strict';
 
@@ -252,11 +254,13 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Non-secret field IDs (override Partner via JIRA_PARTNER_FIELD in .env when needed).
+  // Non-secret field IDs / JQL overrides (secrets stay in .env only).
   if(pathname === '/api/config'){
     sendJson(res, 200, {
       partnerField: (process.env.JIRA_PARTNER_FIELD || '').trim() || 'customfield_10329',
-      publishEarlyField: (process.env.JIRA_PUBLISH_EARLY_FIELD || '').trim() || 'customfield_10182'
+      publishEarlyField: (process.env.JIRA_PUBLISH_EARLY_FIELD || '').trim() || 'customfield_10182',
+      // Override CONTENT delivery ownership query without a code change.
+      contentJql: (process.env.JIRA_CONTENT_JQL || '').trim() || null
     });
     return;
   }

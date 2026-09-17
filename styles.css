@@ -106,6 +106,23 @@
   .solo-lane[data-lane="attention"] .lane-title{color:var(--band-red);}
   .solo-lane[data-lane="waiting"] .lane-title{color:var(--band-orange);}
 
+  /* ---------- CONTENT DELIVERY (footer) ---------- */
+  .content-hint{font-size:12px;color:var(--text-tertiary);margin:-2px 0 12px;}
+  .content-footer-block{margin-top:22px;}
+  .content-table{width:100%;border-collapse:collapse;font-size:13px;}
+  .content-table th{
+    text-align:left;font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--text-tertiary);font-weight:600;padding:0 12px 8px 0;border-bottom:1px solid var(--panel-border);
+  }
+  .content-table td{
+    padding:11px 12px 11px 0;border-bottom:1px solid var(--panel-border);vertical-align:top;
+    color:var(--text-secondary);
+  }
+  .content-table tr:last-child td{border-bottom:none;}
+  .content-table .primary{color:var(--band-blue);font-weight:600;white-space:nowrap;}
+  .content-table .content-summary{color:var(--text-primary);font-weight:600;max-width:360px;}
+  .content-empty{font-size:13px;color:var(--text-tertiary);padding:8px 2px;}
+
   /* ---------- WAITING NUDGE CARDS ---------- */
   .nudge-card{
     background:var(--panel);

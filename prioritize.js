@@ -218,6 +218,14 @@ function normalizeFetchedData(data){
   };
   (data.activeTickets || []).forEach(fixTicket);
   (data.recentlyClosedTickets || []).forEach(fixTicket);
+  // CONTENT delivery rows stay out of Solo lanes; light due-date order only.
+  if(!Array.isArray(data.contentTickets)) data.contentTickets = [];
+  data.contentTickets = data.contentTickets.slice().sort((a, b) => {
+    const da = a.dueDate ? atMidnight(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
+    const db = b.dueDate ? atMidnight(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
+    if(da !== db) return da - db;
+    return String(a.key || '').localeCompare(String(b.key || ''));
+  });
   return data;
 }
 
