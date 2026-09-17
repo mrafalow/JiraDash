@@ -78,14 +78,19 @@
   .cal-weekdays{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:6px;}
   .cal-weekday{font-size:10px;font-weight:600;color:var(--text-tertiary);text-align:center;letter-spacing:.04em;}
   .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
-  .cal-day{aspect-ratio:1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px;font-weight:600;color:var(--text-tertiary);background:transparent;position:relative;min-height:34px;}
+  .cal-day{aspect-ratio:1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px;font-weight:600;color:var(--text-tertiary);background:transparent;position:relative;min-height:34px;border:none;padding:0;font:inherit;}
   .cal-day.other-month{opacity:.28;}
+  .cal-day.is-clickable{cursor:pointer;transition:background .15s,color .15s,box-shadow .15s;}
+  .cal-day.is-clickable:hover{background:var(--panel-hover);color:var(--text-primary);}
   .cal-day.has-due-own{color:var(--band-orange);background:var(--band-orange-bg);}
   .cal-day.has-due-content{color:var(--accent-pink);background:rgba(236,72,153,0.14);}
   .cal-day.has-due-own.has-due-content{color:var(--text-primary);background:linear-gradient(135deg,var(--band-orange-bg),rgba(236,72,153,0.16));}
   .cal-day.is-today{box-shadow:inset 0 0 0 1.5px var(--band-blue);}
   .cal-day.is-today.has-due-own{box-shadow:inset 0 0 0 1.5px var(--band-orange);}
   .cal-day.is-today.has-due-content{box-shadow:inset 0 0 0 1.5px var(--accent-pink);}
+  .cal-day.is-selected{box-shadow:inset 0 0 0 2px var(--band-blue);color:var(--text-primary);}
+  .cal-day.is-selected.has-due-own{box-shadow:inset 0 0 0 2px var(--band-orange);}
+  .cal-day.is-selected.has-due-content{box-shadow:inset 0 0 0 2px var(--accent-pink);}
   .cal-day-num{line-height:1;}
   .cal-day-marks{display:flex;align-items:center;justify-content:center;gap:3px;min-height:5px;}
   .cal-day-mark{width:5px;height:5px;border-radius:50%;opacity:.95;display:inline-block;}
@@ -96,6 +101,10 @@
   .cal-today-note b{color:var(--text-primary);font-weight:600;}
   .cal-legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:11px;color:var(--text-tertiary);font-weight:500;}
   .cal-legend-item{display:inline-flex;align-items:center;gap:6px;}
+  .horizon-panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;}
+  .horizon-panel-head .section-title{margin-bottom:0;}
+  .horizon-show-all{border:1px solid var(--panel-border);background:var(--bg-elevated);color:var(--text-primary);font-size:12px;font-weight:600;padding:6px 12px;border-radius:8px;cursor:pointer;flex-shrink:0;transition:background .15s,color .15s,border-color .15s;}
+  .horizon-show-all:hover{background:var(--panel-hover);border-color:var(--band-blue);color:var(--band-blue);}
   .horizon-list{display:flex;flex-direction:column;}
   .horizon-item{display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid var(--panel-border);}
   .horizon-item:last-child{border-bottom:none;}
