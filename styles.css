@@ -64,6 +64,37 @@
   section.panel-block{margin-bottom:26px;}
   .section-title{font-size:13px;font-weight:600;color:var(--text-secondary);letter-spacing:.04em;margin-bottom:12px;display:flex;align-items:center;gap:8px;}
 
+  /* ---------- DUE CALENDAR + HORIZON ---------- */
+  .horizon-grid{display:grid;grid-template-columns:minmax(260px,320px) 1fr;gap:18px;align-items:start;}
+  @media (max-width:900px){.horizon-grid{grid-template-columns:1fr;}}
+  .calendar-panel,.horizon-panel{background:var(--panel);border:1px solid var(--panel-border);border-radius:var(--radius-md);padding:16px 18px 18px;}
+  .cal-month-label{font-family:var(--font-display);font-size:15px;font-weight:600;margin-bottom:12px;color:var(--text-primary);}
+  .cal-weekdays{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:6px;}
+  .cal-weekday{font-size:10px;font-weight:600;color:var(--text-tertiary);text-align:center;letter-spacing:.04em;}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+  .cal-day{aspect-ratio:1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px;font-weight:600;color:var(--text-tertiary);background:transparent;position:relative;min-height:34px;}
+  .cal-day.other-month{opacity:.28;}
+  .cal-day.has-due{color:var(--text-primary);background:var(--band-blue-bg);}
+  .cal-day.has-due.heat-2{background:rgba(251,146,60,0.22);color:var(--band-orange);}
+  .cal-day.has-due.heat-3{background:var(--band-red-bg);color:var(--band-red);}
+  .cal-day.is-today{box-shadow:inset 0 0 0 1.5px var(--band-blue);}
+  .cal-day.is-today.has-due{box-shadow:inset 0 0 0 1.5px var(--band-red);}
+  .cal-day-num{line-height:1;}
+  .cal-day-mark{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.9;}
+  .cal-today-note{font-size:12px;color:var(--text-secondary);margin-top:12px;font-weight:500;}
+  .cal-today-note.empty{color:var(--text-tertiary);}
+  .cal-today-note b{color:var(--text-primary);font-weight:600;}
+  .horizon-list{display:flex;flex-direction:column;gap:8px;}
+  .horizon-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;background:var(--bg-elevated);border:1px solid var(--panel-border);}
+  .horizon-rank{font-family:var(--font-display);font-weight:700;font-size:14px;color:var(--text-tertiary);width:18px;flex-shrink:0;}
+  .horizon-main{flex:1;min-width:0;}
+  .horizon-key{font-size:12px;font-weight:600;color:var(--band-blue);margin-bottom:2px;}
+  .horizon-summary{font-size:13px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .horizon-due{font-size:12px;font-weight:600;color:var(--text-secondary);flex-shrink:0;text-align:right;min-width:72px;}
+  .horizon-due.overdue{color:var(--band-red);}
+  .horizon-due.today{color:var(--band-orange);}
+  .horizon-empty{font-size:13px;color:var(--text-tertiary);padding:8px 2px;}
+
   /* ---------- SOLO LANES ---------- */
   .solo-lane{margin-bottom:22px;}
   .solo-lane:last-child{margin-bottom:0;}

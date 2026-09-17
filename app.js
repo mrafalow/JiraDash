@@ -13,6 +13,7 @@ function iconSvg(name){
 }
 
 function escapeHtml(s){ const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+function escapeAttr(s){ return escapeHtml(s).replace(/"/g, '&quot;'); }
 
 function renderTicketCard({t, model, scoring}){
   const isExpanded = STATE.expandedKeys.has(t.key);
@@ -98,12 +99,129 @@ function renderTicketList(){
   });
 }
 
+function dueDateKey(d){
+  if(!d) return null;
+  const mid = atMidnight(d);
+  if(isNaN(mid.getTime())) return null;
+  const y = mid.getFullYear();
+  const m = String(mid.getMonth()+1).padStart(2,'0');
+  const day = String(mid.getDate()).padStart(2,'0');
+  return y+'-'+m+'-'+day;
+}
+
+function ticketsDueOn(tickets, dayKey){
+  return tickets.filter(t => dueDateKey(t.dueDate) === dayKey);
+}
+
+function dueTodayTickets(tickets){
+  return ticketsDueOn(tickets, dueDateKey(todayMid()));
+}
+
+function horizonTickets(tickets, limit){
+  return tickets
+    .filter(t => !!dueDateKey(t.dueDate))
+    .slice()
+    .sort((a,b) => {
+      const da = atMidnight(a.dueDate).getTime();
+      const db = atMidnight(b.dueDate).getTime();
+      if(da !== db) return da - db;
+      return String(a.key||'').localeCompare(String(b.key||''));
+    })
+    .slice(0, limit || 3);
+}
+
+function horizonDueLabel(dueDate){
+  const today = todayMid();
+  const due = atMidnight(dueDate);
+  const days = businessDaysBetween(today, due);
+  if(days === 0) return { text: 'Today', cls: 'today' };
+  if(days < 0) return { text: Math.abs(days)+'d overdue', cls: 'overdue' };
+  return { text: 'In '+days+'d', cls: '' };
+}
+
+function renderHorizonPanel(){
+  const tickets = STATE.data.activeTickets || [];
+  const today = todayMid();
+  const todayKey = dueDateKey(today);
+  const dueToday = dueTodayTickets(tickets);
+  const next3 = horizonTickets(tickets, 3);
+
+  document.getElementById('horizonWrap').style.display = 'block';
+
+  const year = today.getFullYear();
+  const month = today.getMonth();
+  const monthLabel = today.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const first = new Date(year, month, 1);
+  const startPad = first.getDay(); // Sun=0
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const weekdays = ['S','M','T','W','T','F','S'];
+
+  const cells = [];
+  for(let i = 0; i < startPad; i++){
+    cells.push('<div class="cal-day other-month"></div>');
+  }
+  for(let day = 1; day <= daysInMonth; day++){
+    const key = dueDateKey(new Date(year, month, day));
+    const due = ticketsDueOn(tickets, key);
+    const count = due.length;
+    const heat = count >= 3 ? 'heat-3' : count === 2 ? 'heat-2' : count === 1 ? '' : '';
+    const isToday = key === todayKey;
+    const title = count
+      ? due.map(t => t.key + (t.summary ? ' — ' + t.summary : '')).join('\n')
+      : (isToday ? 'Nothing due today' : '');
+    const classes = ['cal-day'];
+    if(count) classes.push('has-due');
+    if(heat) classes.push(heat);
+    if(isToday) classes.push('is-today');
+    cells.push(
+      '<div class="'+classes.join(' ')+'"'+(title ? ' title="'+escapeAttr(title)+'"' : '')+'>' +
+        '<span class="cal-day-num">'+day+'</span>' +
+        (count ? '<span class="cal-day-mark"></span>' : '') +
+      '</div>'
+    );
+  }
+
+  const todayNote = dueToday.length
+    ? '<div class="cal-today-note"><b>'+dueToday.length+'</b> due today — '+dueToday.map(t => {
+        const link = jiraLink(t.key);
+        return link ? '<a class="jira-link" href="'+link+'" target="_blank" rel="noopener">'+escapeHtml(t.key)+'</a>' : escapeHtml(t.key);
+      }).join(', ')+'</div>'
+    : '<div class="cal-today-note empty">Nothing due today</div>';
+
+  document.getElementById('dueCalendar').innerHTML =
+    '<div class="cal-month-label">'+escapeHtml(monthLabel)+'</div>' +
+    '<div class="cal-weekdays">'+weekdays.map(w => '<div class="cal-weekday">'+w+'</div>').join('')+'</div>' +
+    '<div class="cal-grid">'+cells.join('')+'</div>' +
+    todayNote;
+
+  if(!next3.length){
+    document.getElementById('horizonList').innerHTML =
+      '<div class="horizon-empty">No upcoming due dates on Active Requests</div>';
+  } else {
+    document.getElementById('horizonList').innerHTML =
+      '<div class="horizon-list">'+next3.map((t, i) => {
+        const due = horizonDueLabel(t.dueDate);
+        const tLink = jiraLink(t.key);
+        const keyHtml = tLink
+          ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+escapeHtml(t.key)+'</a>'
+          : escapeHtml(t.key);
+        return '<div class="horizon-item">' +
+          '<div class="horizon-rank">'+(i+1)+'</div>' +
+          '<div class="horizon-main">' +
+            '<div class="horizon-key">'+keyHtml+'</div>' +
+            '<div class="horizon-summary">'+escapeHtml(t.summary||'')+'</div>' +
+          '</div>' +
+          '<div class="horizon-due'+(due.cls ? ' '+due.cls : '')+'" title="'+escapeAttr(fmtDate(t.dueDate))+'">'+due.text+'</div>' +
+        '</div>';
+      }).join('')+'</div>';
+  }
+}
+
 function renderBottomStrip(){
   const tickets = STATE.data.activeTickets;
-  const today = todayMid();
   const scored = tickets.map(t => ({ t, model: buildStageModel(t), scoring: computeScore(t, buildStageModel(t)) }));
 
-  const dueToday = tickets.filter(t => atMidnight(t.dueDate).getTime() === today.getTime());
+  const dueToday = dueTodayTickets(tickets);
   const atRisk = scored.filter(({model}) => model.stageGap > 0);
   const waiting = scored.filter(({model}) => isWaitingOnOthers(model));
 
@@ -320,6 +438,7 @@ async function loadAll(spinning){
       data.currentUserFirstName ? 'Good morning, ' + data.currentUserFirstName : 'Good morning';
     document.getElementById('greetingSub').textContent =
       data.activeTickets.length ? data.activeTickets.length + ' active ticket' + (data.activeTickets.length===1?'':'s') + ' on your board.' : 'Nothing active — you are all caught up.';
+    renderHorizonPanel();
     renderTicketList();
     renderBottomStrip();
     renderTable();
@@ -383,6 +502,7 @@ function saveConfig(){
   note.style.color = 'var(--green)';
   note.textContent = 'Saved — scores updated below.';
   if(STATE.data){
+    renderHorizonPanel();
     renderTicketList();
     renderBottomStrip();
     renderTable();
