@@ -226,3 +226,25 @@ function doNotPublishEarlyFromText(text){
   const t = text.toLowerCase();
   return t.includes('do not publish early') || t.includes('publish on or after') || t.includes('hold until');
 }
+
+/** Solo Work lanes — exclusive: waiting > attention > action */
+const SOLO_LANES = [
+  { id: 'attention', title: 'Needs Attention', hint: 'Due soon or high urgency' },
+  { id: 'action', title: 'My Action Items', hint: 'Yours — not in the fire queue' },
+  { id: 'waiting', title: 'Waiting on Others', hint: 'Blocked on someone else\'s open subtask' }
+];
+const DUE_SOON_DAYS = 2;
+const ATTENTION_SCORE_MIN = 50;
+
+function isWaitingOnOthers(model){
+  return !!(model.currentOpen && !model.currentOpen.missing &&
+    model.currentOpen.subtask && model.currentOpen.subtask.assigneeIsCurrentUser === false);
+}
+
+function classifySoloLane(ticket, model, scoring){
+  if(isWaitingOnOthers(model)) return 'waiting';
+  const dueSoon = scoring.daysUntilDue <= DUE_SOON_DAYS;
+  const highScore = scoring.score >= ATTENTION_SCORE_MIN;
+  if(dueSoon || highScore) return 'attention';
+  return 'action';
+}

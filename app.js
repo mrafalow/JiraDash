@@ -14,6 +14,47 @@ function iconSvg(name){
 
 function escapeHtml(s){ const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 
+function renderTicketCard({t, model, scoring}){
+  const isExpanded = STATE.expandedKeys.has(t.key);
+  const tag = buildTag(t, model, scoring);
+  const priorityShort = (t.priority || '').replace(/^\d+ - /,'');
+  const dueLabel = scoring.daysUntilDue === 0 ? 'Today' : scoring.daysUntilDue < 0 ? Math.abs(scoring.daysUntilDue)+'d overdue' : 'In '+scoring.daysUntilDue+'d';
+
+  const subtaskRows = (t.subtasks || []).map(st => {
+    const color = st.status === 'Closed' ? 'var(--green)' : (st.assigneeIsCurrentUser === false ? 'var(--band-orange)' : 'var(--band-blue)');
+    const label = STAGE_LABELS[st.type] || st.type;
+    const stLink = jiraLink(st.key);
+    const labelHtml = stLink ? '<a class="jira-link" href="'+stLink+'" target="_blank" rel="noopener">'+label+'</a>' : label;
+    let tagText = st.status === 'Closed' ? 'Done' : (st.assigneeIsCurrentUser === false ? 'Waiting on ' + (st.assigneeName || 'other') : 'In progress');
+    return '<div class="subtask-row">' +
+      '<span class="status-dot" style="background:'+color+'"></span>' +
+      '<span class="subtask-type">'+labelHtml+'</span>' +
+      '<span class="subtask-tag">'+tagText+'</span>' +
+      '<span class="subtask-assignee">'+(st.assigneeName || '')+'</span>' +
+      '</div>';
+  }).join('');
+
+  const tLink = jiraLink(t.key);
+  const summaryHtml = tLink ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+escapeHtml(t.summary)+'</a>' : escapeHtml(t.summary);
+
+  return '<div class="ticket-card'+(isExpanded?' expanded':'')+'" style="--band-color:'+BAND_COLOR[scoring.band]+'" data-key="'+t.key+'">' +
+    '<div class="ticket-row" data-toggle="'+t.key+'">' +
+      '<div class="score-badge" style="background:'+BAND_BG[scoring.band]+';color:'+BAND_COLOR[scoring.band]+'">'+scoring.score+'</div>' +
+      '<div class="ticket-main">' +
+        '<div class="ticket-summary">'+summaryHtml+'</div>' +
+        '<div class="ticket-tag">'+tag+'</div>' +
+      '</div>' +
+      '<div class="ticket-meta">' +
+        '<div class="meta-col">Due<div class="val">'+dueLabel+'</div></div>' +
+        '<div class="priority-chip" style="background:'+BAND_BG[scoring.band]+';color:'+BAND_COLOR[scoring.band]+'">'+priorityShort+'</div>' +
+        (model.timelineTight ? '<div class="priority-chip" style="background:var(--band-orange-bg);color:var(--band-orange);" title="Even hitting every checkpoint on schedule, PR + confirmation don\'t fit before the due date">Tight timeline</div>' : '') +
+      '</div>' +
+      '<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg>' +
+    '</div>' +
+    (isExpanded ? '<div class="subtask-list">'+subtaskRows+'</div>' : '') +
+  '</div>';
+}
+
 function renderTicketList(){
   const container = document.getElementById('ticketList');
   const tickets = STATE.data.activeTickets;
@@ -24,47 +65,25 @@ function renderTicketList(){
   const scored = tickets.map(t => {
     const model = buildStageModel(t);
     const scoring = computeScore(t, model);
-    return { t, model, scoring };
+    const lane = classifySoloLane(t, model, scoring);
+    return { t, model, scoring, lane };
   }).sort((a,b) => b.scoring.score - a.scoring.score);
 
-  container.innerHTML = scored.map(({t, model, scoring}) => {
-    const isExpanded = STATE.expandedKeys.has(t.key);
-    const tag = buildTag(t, model, scoring);
-    const priorityShort = (t.priority || '').replace(/^\d+ - /,'');
-    const dueLabel = scoring.daysUntilDue === 0 ? 'Today' : scoring.daysUntilDue < 0 ? Math.abs(scoring.daysUntilDue)+'d overdue' : 'In '+scoring.daysUntilDue+'d';
+  const byLane = { attention: [], action: [], waiting: [] };
+  scored.forEach(item => { (byLane[item.lane] || byLane.action).push(item); });
 
-    const subtaskRows = (t.subtasks || []).map(st => {
-      const color = st.status === 'Closed' ? 'var(--green)' : (st.assigneeIsCurrentUser === false ? 'var(--band-orange)' : 'var(--band-blue)');
-      const label = STAGE_LABELS[st.type] || st.type;
-      const stLink = jiraLink(st.key);
-      const labelHtml = stLink ? '<a class="jira-link" href="'+stLink+'" target="_blank" rel="noopener">'+label+'</a>' : label;
-      let tagText = st.status === 'Closed' ? 'Done' : (st.assigneeIsCurrentUser === false ? 'Waiting on ' + (st.assigneeName || 'other') : 'In progress');
-      return '<div class="subtask-row">' +
-        '<span class="status-dot" style="background:'+color+'"></span>' +
-        '<span class="subtask-type">'+labelHtml+'</span>' +
-        '<span class="subtask-tag">'+tagText+'</span>' +
-        '<span class="subtask-assignee">'+(st.assigneeName || '')+'</span>' +
-        '</div>';
-    }).join('');
-
-    const tLink = jiraLink(t.key);
-    const summaryHtml = tLink ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+escapeHtml(t.summary)+'</a>' : escapeHtml(t.summary);
-
-    return '<div class="ticket-card'+(isExpanded?' expanded':'')+'" style="--band-color:'+BAND_COLOR[scoring.band]+'" data-key="'+t.key+'">' +
-      '<div class="ticket-row" data-toggle="'+t.key+'">' +
-        '<div class="score-badge" style="background:'+BAND_BG[scoring.band]+';color:'+BAND_COLOR[scoring.band]+'">'+scoring.score+'</div>' +
-        '<div class="ticket-main">' +
-          '<div class="ticket-summary">'+summaryHtml+'</div>' +
-          '<div class="ticket-tag">'+tag+'</div>' +
-        '</div>' +
-        '<div class="ticket-meta">' +
-          '<div class="meta-col">Due<div class="val">'+dueLabel+'</div></div>' +
-          '<div class="priority-chip" style="background:'+BAND_BG[scoring.band]+';color:'+BAND_COLOR[scoring.band]+'">'+priorityShort+'</div>' +
-          (model.timelineTight ? '<div class="priority-chip" style="background:var(--band-orange-bg);color:var(--band-orange);" title="Even hitting every checkpoint on schedule, PR + confirmation don\'t fit before the due date">Tight timeline</div>' : '') +
-        '</div>' +
-        '<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg>' +
+  container.innerHTML = SOLO_LANES.map(lane => {
+    const items = byLane[lane.id] || [];
+    const cards = items.length
+      ? items.map(renderTicketCard).join('')
+      : '<div class="lane-empty">Nothing in this lane</div>';
+    return '<div class="solo-lane" data-lane="'+lane.id+'">' +
+      '<div class="lane-header">' +
+        '<div class="lane-title">'+lane.title+'</div>' +
+        '<div class="lane-count">'+items.length+'</div>' +
       '</div>' +
-      (isExpanded ? '<div class="subtask-list">'+subtaskRows+'</div>' : '') +
+      '<div class="lane-hint">'+lane.hint+'</div>' +
+      '<div class="lane-list">'+cards+'</div>' +
     '</div>';
   }).join('');
 
@@ -86,7 +105,7 @@ function renderBottomStrip(){
 
   const dueToday = tickets.filter(t => atMidnight(t.dueDate).getTime() === today.getTime());
   const atRisk = scored.filter(({model}) => model.stageGap > 0);
-  const waiting = scored.filter(({model}) => model.currentOpen && !model.currentOpen.missing && model.currentOpen.subtask && model.currentOpen.subtask.assigneeIsCurrentUser === false);
+  const waiting = scored.filter(({model}) => isWaitingOnOthers(model));
 
   let publishState = 'off';
   if(dueToday.length){

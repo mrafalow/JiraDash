@@ -64,6 +64,17 @@
   section.panel-block{margin-bottom:26px;}
   .section-title{font-size:13px;font-weight:600;color:var(--text-secondary);letter-spacing:.04em;margin-bottom:12px;display:flex;align-items:center;gap:8px;}
 
+  /* ---------- SOLO LANES ---------- */
+  .solo-lane{margin-bottom:22px;}
+  .solo-lane:last-child{margin-bottom:0;}
+  .lane-header{display:flex;align-items:baseline;gap:10px;margin-bottom:4px;}
+  .lane-title{font-family:var(--font-display);font-size:15px;font-weight:600;color:var(--text-primary);letter-spacing:.02em;}
+  .lane-count{font-size:12px;font-weight:600;color:var(--text-tertiary);background:rgba(255,255,255,.05);padding:2px 8px;border-radius:999px;}
+  .lane-hint{font-size:12px;color:var(--text-tertiary);margin-bottom:10px;}
+  .lane-empty{font-size:13px;color:var(--text-tertiary);padding:10px 4px 4px;border-top:1px dashed var(--panel-border);}
+  .solo-lane[data-lane="attention"] .lane-title{color:var(--band-red);}
+  .solo-lane[data-lane="waiting"] .lane-title{color:var(--band-orange);}
+
   /* ---------- TICKET LIST ---------- */
   .ticket-card{background:var(--panel);border:1px solid var(--panel-border);border-radius:var(--radius-md);margin-bottom:9px;overflow:hidden;border-left:4px solid var(--band-color,var(--band-blue));}
   .ticket-row{display:flex;align-items:center;gap:16px;padding:14px 18px;cursor:pointer;}

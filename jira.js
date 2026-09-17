@@ -210,6 +210,19 @@ async function fetchJiraData(){
     throw err;
   }
 
+  // Scoped tokens often lack read:jira-user (/myself 401). Probe assignee =
+  // currentUser() so Waiting-lane "is this mine?" checks still work.
+  if(!currentAccountId){
+    try{
+      const probe = await jiraSearch('assignee = currentUser() ORDER BY updated DESC', ['assignee'], 1);
+      const a = probe[0] && probe[0].fields && probe[0].fields.assignee;
+      if(a && a.accountId) currentAccountId = a.accountId;
+      if(!currentUserFirstName && a && (a.displayName || a.name)){
+        currentUserFirstName = String(a.displayName || a.name).split(/\s+/)[0];
+      }
+    } catch(_){ /* leave null — Waiting falls back to "not mine" */ }
+  }
+
   if(!currentUserFirstName){
     const sample = activeIssues[0] && activeIssues[0].fields && activeIssues[0].fields.assignee;
     const dn = sample && (sample.displayName || sample.name);
