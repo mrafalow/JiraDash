@@ -195,6 +195,19 @@
   </div>
 </div>
 
+<div id="atRiskPopover" class="at-risk-popover" hidden aria-hidden="true" role="dialog" aria-label="At Risk tickets"></div>
+
+<div id="atRiskModal" class="at-risk-modal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="atRiskModalTitle">
+  <div class="at-risk-modal-backdrop" data-at-risk-modal-dismiss></div>
+  <div class="at-risk-modal-panel">
+    <div class="at-risk-modal-head">
+      <h2 id="atRiskModalTitle">At Risk</h2>
+      <button type="button" class="at-risk-modal-close" id="atRiskModalClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="at-risk-modal-body" id="atRiskModalBody"></div>
+  </div>
+</div>
+
 <script src="prioritize.js"></script>
 <script src="jira.js"></script>
 <script src="app.js"></script>

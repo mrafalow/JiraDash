@@ -9,7 +9,8 @@ let STATE = {
   sortDir: 1,
   calYear: todayMid().getFullYear(),
   calMonth: todayMid().getMonth(),
-  horizonFilterDay: null
+  horizonFilterDay: null,
+  atRiskItems: []
 };
 
 function iconSvg(name){
@@ -413,10 +414,23 @@ function renderHorizonPanel(){
 
 function renderBottomStrip(){
   const tickets = STATE.data.activeTickets;
-  const scored = tickets.map(t => ({ t, model: buildStageModel(t), scoring: computeScore(t, buildStageModel(t)) }));
+  const scored = tickets.map(t => {
+    const model = buildStageModel(t);
+    return { t, model, scoring: computeScore(t, model) };
+  });
 
   const dueToday = dueTodayTickets(tickets);
-  const atRisk = scored.filter(({model}) => model.stageGap > 0);
+  const atRisk = scored
+    .filter(({model}) => model.stageGap > 0)
+    .slice()
+    .sort((a,b) => {
+      const scoreDiff = (b.scoring.score||0) - (a.scoring.score||0);
+      if(scoreDiff) return scoreDiff;
+      const gapDiff = (b.model.stageGap||0) - (a.model.stageGap||0);
+      if(gapDiff) return gapDiff;
+      return String(a.t.key||'').localeCompare(String(b.t.key||''));
+    });
+  STATE.atRiskItems = atRisk;
   const waiting = scored.filter(({t, model}) => isWaitingOnOthers(model, t));
 
   let publishState = 'off';
@@ -444,7 +458,13 @@ function renderBottomStrip(){
       '<div class="light '+(publishState==='off'?'':publishState)+'"></div>' +
       '<div class="publish-light-label">'+(publishState==='off'?'Nothing publishing today':publishState==='green'?'Clear to publish':'Unlock needed — go now')+'</div>' +
     '</div>' +
-    strip('warning', 'var(--band-orange)', 'At Risk', atRisk.length, atRisk.length ? 'Behind expected pace' : 'All on pace') +
+    strip('warning', 'var(--band-orange)', 'At Risk', atRisk.length, atRisk.length ? 'Behind expected pace' : 'All on pace', {
+      id: 'atRiskStrip',
+      clickable: atRisk.length > 0,
+      ariaLabel: atRisk.length
+        ? 'At Risk — '+atRisk.length+' ticket'+(atRisk.length===1?'':'s')+' behind expected pace. Activate to jump to ticket'+(atRisk.length===1?'':'s')+'.'
+        : 'At Risk — all on pace'
+    }) +
     strip('calendar', 'var(--band-red)', 'Due Today', dueToday.length, dueToday.length ? 'Needs a look' : 'Nothing due') +
     strip('users', 'var(--band-blue)', 'Waiting on Others', waiting.length, waiting.length ? 'Sitting with someone else' : 'Nothing stalled') +
     '<div class="strip-card donut-card">' + donutSvg(condCounts, condTotal) +
@@ -454,14 +474,232 @@ function renderBottomStrip(){
         legendRow('var(--band-gold)','Alt Text',condCounts.ALTTEXT) +
       '</div>' +
     '</div>';
+
+  bindAtRiskStrip();
 }
-function strip(icon, color, label, value, sub){
-  return '<div class="strip-card">' +
+function strip(icon, color, label, value, sub, opts){
+  opts = opts || {};
+  const clickable = !!opts.clickable;
+  const idAttr = opts.id ? ' id="'+escapeAttr(opts.id)+'"' : '';
+  const classes = 'strip-card'+(clickable ? ' strip-card-clickable' : '');
+  const a11y = clickable
+    ? ' role="button" tabindex="0" aria-label="'+escapeAttr(opts.ariaLabel || label)+'"'
+    : (opts.id ? ' aria-disabled="true"' : '');
+  return '<div class="'+classes+'"'+idAttr+a11y+'>' +
     '<div class="metric-icon" style="background:transparent;color:'+color+'">'+iconSvg(icon)+'</div>' +
     '<div class="metric-label">'+label+'</div>' +
     '<div class="metric-value">'+value+'</div>' +
     '<div class="metric-sub" style="color:'+color+'">'+sub+'</div>' +
   '</div>';
+}
+
+function ensureSoloView(){
+  const soloNav = document.querySelector('.nav-item[data-view="solo"]');
+  if(soloNav && !soloNav.classList.contains('active')) soloNav.click();
+}
+
+/** Prefer Needs Attention, then Waiting, then Action when dual-listed. */
+function findSoloTicketCard(key){
+  if(!key) return null;
+  const list = document.getElementById('ticketList');
+  if(!list) return null;
+  const laneOrder = ['attention', 'waiting', 'action'];
+  for(let i = 0; i < laneOrder.length; i++){
+    const lane = list.querySelector('.solo-lane[data-lane="'+laneOrder[i]+'"]');
+    if(!lane) continue;
+    const cards = lane.querySelectorAll('.ticket-card[data-key], .nudge-card[data-key]');
+    for(let j = 0; j < cards.length; j++){
+      if(cards[j].getAttribute('data-key') === key) return cards[j];
+    }
+  }
+  const all = list.querySelectorAll('.ticket-card[data-key], .nudge-card[data-key]');
+  for(let k = 0; k < all.length; k++){
+    if(all[k].getAttribute('data-key') === key) return all[k];
+  }
+  return null;
+}
+
+function highlightTicketCard(card){
+  if(!card) return;
+  card.classList.remove('flash-highlight');
+  void card.offsetWidth;
+  card.classList.add('flash-highlight');
+  const clear = () => card.classList.remove('flash-highlight');
+  card.addEventListener('animationend', clear, { once: true });
+  setTimeout(clear, 2200);
+}
+
+function scrollToAtRiskTicket(key){
+  ensureSoloView();
+  closeAtRiskPopover();
+  closeAtRiskModal();
+  const card = findSoloTicketCard(key);
+  if(!card) return false;
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  highlightTicketCard(card);
+  return true;
+}
+
+function atRiskWhyText(item){
+  const gap = item && item.model ? item.model.stageGap : 0;
+  const score = item && item.scoring ? item.scoring.score : '';
+  const parts = [];
+  if(gap > 0) parts.push(gap + ' stage'+(gap===1?'':'s')+' behind');
+  if(score !== '' && score != null) parts.push('score '+score);
+  return parts.join(' · ') || 'Behind pace';
+}
+
+function atRiskDueText(item){
+  const due = item && item.t && item.t.dueDate;
+  if(!due) return 'No due date';
+  const days = item.scoring && item.scoring.daysUntilDue;
+  if(days === 0) return 'Due today';
+  if(typeof days === 'number' && days < 0) return Math.abs(days)+'d overdue';
+  if(typeof days === 'number') return 'Due in '+days+'d';
+  return 'Due '+fmtDate(due);
+}
+
+function renderAtRiskListRows(items){
+  return items.map(item => {
+    const key = item.t.key || '';
+    return '<button type="button" class="at-risk-row" data-at-risk-key="'+escapeAttr(key)+'">' +
+      '<div class="at-risk-row-main">' +
+        '<div class="at-risk-row-key">'+escapeHtml(key)+'</div>' +
+        '<div class="at-risk-row-summary">'+escapeHtml(item.t.summary||'')+'</div>' +
+      '</div>' +
+      '<div class="at-risk-row-meta">' +
+        '<span class="at-risk-why">'+escapeHtml(atRiskWhyText(item))+'</span>' +
+        '<span class="at-risk-due">'+escapeHtml(atRiskDueText(item))+'</span>' +
+      '</div>' +
+    '</button>';
+  }).join('');
+}
+
+function closeAtRiskPopover(){
+  const pop = document.getElementById('atRiskPopover');
+  if(pop){
+    pop.hidden = true;
+    pop.setAttribute('aria-hidden', 'true');
+    pop.innerHTML = '';
+  }
+  document.removeEventListener('mousedown', onAtRiskPopoverOutside, true);
+  document.removeEventListener('keydown', onAtRiskPopoverEsc, true);
+}
+
+function onAtRiskPopoverOutside(e){
+  const pop = document.getElementById('atRiskPopover');
+  const strip = document.getElementById('atRiskStrip');
+  if(!pop || pop.hidden) return;
+  if(pop.contains(e.target) || (strip && strip.contains(e.target))) return;
+  closeAtRiskPopover();
+}
+
+function onAtRiskPopoverEsc(e){
+  if(e.key === 'Escape') closeAtRiskPopover();
+}
+
+function openAtRiskPopover(items, anchor){
+  const pop = document.getElementById('atRiskPopover');
+  if(!pop || !anchor) return;
+  pop.innerHTML =
+    '<div class="at-risk-popover-title">At Risk</div>' +
+    '<div class="at-risk-popover-list">'+renderAtRiskListRows(items)+'</div>';
+  pop.hidden = false;
+  pop.setAttribute('aria-hidden', 'false');
+
+  const rect = anchor.getBoundingClientRect();
+  const width = Math.max(280, Math.min(360, rect.width + 40));
+  pop.style.width = width+'px';
+  let left = rect.left;
+  let top = rect.bottom + 8;
+  pop.style.left = left+'px';
+  pop.style.top = top+'px';
+  const pr = pop.getBoundingClientRect();
+  if(pr.right > window.innerWidth - 12){
+    left = Math.max(12, window.innerWidth - pr.width - 12);
+    pop.style.left = left+'px';
+  }
+  if(pr.bottom > window.innerHeight - 12){
+    top = Math.max(8, rect.top - pr.height - 8);
+    pop.style.top = top+'px';
+  }
+
+  pop.querySelectorAll('[data-at-risk-key]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      scrollToAtRiskTicket(btn.getAttribute('data-at-risk-key'));
+    });
+  });
+  document.addEventListener('mousedown', onAtRiskPopoverOutside, true);
+  document.addEventListener('keydown', onAtRiskPopoverEsc, true);
+  const first = pop.querySelector('[data-at-risk-key]');
+  if(first) first.focus();
+}
+
+function closeAtRiskModal(){
+  const modal = document.getElementById('atRiskModal');
+  if(!modal) return;
+  modal.hidden = true;
+  modal.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('modal-open');
+  document.removeEventListener('keydown', onAtRiskModalEsc, true);
+}
+
+function onAtRiskModalEsc(e){
+  if(e.key === 'Escape') closeAtRiskModal();
+}
+
+function openAtRiskModal(items){
+  const modal = document.getElementById('atRiskModal');
+  const body = document.getElementById('atRiskModalBody');
+  const title = document.getElementById('atRiskModalTitle');
+  if(!modal || !body) return;
+  closeAtRiskPopover();
+  if(title) title.textContent = 'At Risk — '+items.length+' tickets';
+  body.innerHTML = '<div class="at-risk-modal-list">'+renderAtRiskListRows(items)+'</div>';
+  modal.hidden = false;
+  modal.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open');
+  body.querySelectorAll('[data-at-risk-key]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      scrollToAtRiskTicket(btn.getAttribute('data-at-risk-key'));
+    });
+  });
+  document.addEventListener('keydown', onAtRiskModalEsc, true);
+  const closeBtn = document.getElementById('atRiskModalClose');
+  if(closeBtn) closeBtn.focus();
+}
+
+function handleAtRiskActivate(){
+  const items = STATE.atRiskItems || [];
+  if(!items.length) return;
+  const stripEl = document.getElementById('atRiskStrip');
+  if(items.length === 1){
+    scrollToAtRiskTicket(items[0].t.key);
+    return;
+  }
+  if(items.length === 2){
+    const pop = document.getElementById('atRiskPopover');
+    if(pop && !pop.hidden){
+      closeAtRiskPopover();
+      return;
+    }
+    openAtRiskPopover(items, stripEl);
+    return;
+  }
+  openAtRiskModal(items);
+}
+
+function bindAtRiskStrip(){
+  const el = document.getElementById('atRiskStrip');
+  if(!el) return;
+  if(!el.classList.contains('strip-card-clickable')) return;
+  el.addEventListener('click', handleAtRiskActivate);
+  el.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter' || e.key === ' '){
+      e.preventDefault();
+      handleAtRiskActivate();
+    }
+  });
 }
 function legendRow(color,label,count){
   return '<div class="row"><span class="swatch" style="background:'+color+'"></span>'+label+' <span class="count">'+count+'</span></div>';
@@ -888,6 +1126,17 @@ document.getElementById('toggleClosed').addEventListener('click', () => {
 });
 document.getElementById('configSaveBtn').addEventListener('click', saveConfig);
 document.getElementById('configResetBtn').addEventListener('click', resetConfigToDefaults);
+
+(function bindAtRiskChrome(){
+  const closeBtn = document.getElementById('atRiskModalClose');
+  if(closeBtn) closeBtn.addEventListener('click', closeAtRiskModal);
+  const modal = document.getElementById('atRiskModal');
+  if(modal){
+    modal.querySelectorAll('[data-at-risk-modal-dismiss]').forEach(el => {
+      el.addEventListener('click', closeAtRiskModal);
+    });
+  }
+})();
 
 loadSavedConfig();
 loadAll(false);
