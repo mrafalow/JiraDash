@@ -174,7 +174,7 @@ function groupByParent(subtaskIssues, currentAccountId, includeRaDescription){
   return byParent;
 }
 
-function mapActiveTicket(issue, subtasksByParent, currentAccountId, fieldIds){
+function mapActiveTicket(issue, subtasksByParent, currentAccountId, fieldIds, commentSignalsByKey){
   const f = issue.fields || {};
   const subtasks = (subtasksByParent[issue.key] || []).slice();
   const ticketDesc = descriptionToText(f.description);
@@ -182,6 +182,8 @@ function mapActiveTicket(issue, subtasksByParent, currentAccountId, fieldIds){
   const override = doNotPublishEarlyFromText(ticketDesc) || doNotPublishEarlyFromText(ra && ra.description);
   const ids = fieldIds || {};
   const assignee = mapAssignee(f, currentAccountId);
+  const commentSignals = (commentSignalsByKey && commentSignalsByKey[issue.key])
+    || analyzeCommentSignals([]);
   return {
     key: issue.key,
     summary: f.summary || '',
@@ -194,7 +196,8 @@ function mapActiveTicket(issue, subtasksByParent, currentAccountId, fieldIds){
     partner: partnerValue(f, ids.partnerField),
     publishEarlyField: publishEarlyValue(f, ids.publishEarlyField),
     doNotPublishEarlyOverride: !!override,
-    subtasks
+    subtasks,
+    commentSignals
   };
 }
 
@@ -258,6 +261,134 @@ async function fetchSubtasksForParents(keys, currentAccountId, includeRaDescript
     all.push(...issues);
   }
   return groupByParent(all, currentAccountId, includeRaDescription);
+}
+
+/** How many newest comments to scan per parent for Waiting / Partner signals. */
+const COMMENT_SCAN_MAX = 25;
+
+/**
+ * Heuristics over recent comment text (case-insensitive) for Solo Waiting lane.
+ * v1: waiting for/on images|assets|photos; due/date adjusted|pushed|moved; general waiting-on.
+ * Also catches Partner photo/image delivery phrasing (Turf Club-style notes).
+ */
+function analyzeCommentSignals(commentTexts){
+  const joined = (commentTexts || []).filter(Boolean).join('\n').toLowerCase();
+  if(!joined.trim()){
+    return {
+      waitingOnOthers: false,
+      waitingOnImages: false,
+      dateAdjusted: false,
+      waitingOnPartnerAssets: false,
+      matchSnippet: null
+    };
+  }
+
+  const waitingOnImages = /waiting\s+(?:for|on)\s+(?:the\s+)?(?:images?|assets?|photos?)/.test(joined)
+    || /(?:need(?:s|ed)?|awaiting)\s+(?:images?|assets?|photos?)\s+(?:from|before)/.test(joined)
+    || /(?:images?|assets?|photos?)\s+from\s+(?:partner|dakota)/.test(joined)
+    || /from\s+partner\s+(?:before|for)\b/.test(joined)
+    // Turf Club-style: "have photos sent… once the images are added"
+    || /(?:have|get|need)\s+(?:photos?|images?|assets?)\s+sent/.test(joined)
+    || /once\s+(?:the\s+)?(?:images?|photos?|assets?)\s+(?:are\s+)?added/.test(joined)
+    || /(?:note|ask(?:ing)?|asked)\s+to\s+partner.*(?:photos?|images?|assets?)/.test(joined)
+    || /partner.*(?:photos?|images?|assets?).*(?:sent|add|deliver)/.test(joined)
+    || /(?:photos?|images?|assets?).*(?:from|to)\s+partner/.test(joined)
+    || /sent\s+note\s+to\s+partner/.test(joined) && /(?:photos?|images?|assets?)/.test(joined);
+
+  const dateAdjusted = /(?:due|date)\s+(?:was\s+)?(?:adjusted|pushed|moved|changed|shifted)/.test(joined)
+    || /(?:adjusted|pushed|moved|changed|shifted)\s+(?:the\s+)?(?:due\s+)?date/.test(joined)
+    || /date\s+(?:adjustment|change|push)/.test(joined);
+
+  const waitingOn = /waiting\s+(?:for|on)\b/.test(joined)
+    || /blocked\s+(?:on|by)\b/.test(joined)
+    || /holding\s+(?:for|on)\b/.test(joined)
+    || /still\s+need(?:s|ed)?\b/.test(joined);
+
+  const waitingOnOthers = waitingOnImages || dateAdjusted || waitingOn;
+  const waitingOnPartnerAssets = waitingOnImages;
+
+  let matchSnippet = null;
+  if(waitingOnOthers){
+    const source = (commentTexts || []).find(t => {
+      const low = String(t || '').toLowerCase();
+      return /waiting\s+(?:for|on)|blocked\s+(?:on|by)|(?:due|date).*(?:adjusted|pushed|moved)|(?:images?|assets?|photos?)|partner/.test(low);
+    }) || commentTexts[0];
+    matchSnippet = String(source || '').replace(/\s+/g, ' ').trim().slice(0, 140) || null;
+  }
+
+  return {
+    waitingOnOthers,
+    waitingOnImages,
+    dateAdjusted,
+    waitingOnPartnerAssets,
+    matchSnippet
+  };
+}
+
+function commentBodyToText(body){
+  if(!body) return '';
+  if(typeof body === 'string') return body;
+  return adfToText(body).trim();
+}
+
+/**
+ * Fetch recent comments for parent keys via existing /api/jira proxy.
+ * On 401/scope failure, returns { byKey: {}, error } so the board still loads
+ * and we stop hammering the gateway once scope is clearly missing.
+ */
+async function fetchCommentsForParents(keys){
+  if(!keys.length) return { byKey: {}, error: null };
+  const byKey = {};
+  let firstError = null;
+  let scopeBlocked = false;
+
+  const CONCURRENCY = 5;
+  for(let i = 0; i < keys.length; i += CONCURRENCY){
+    if(scopeBlocked) break;
+    const chunk = keys.slice(i, i + CONCURRENCY);
+    await Promise.all(chunk.map(async (key) => {
+      if(scopeBlocked){
+        byKey[key] = analyzeCommentSignals([]);
+        return;
+      }
+      try{
+        const data = await jiraFetch(
+          '/rest/api/3/issue/' + encodeURIComponent(key) +
+          '/comment?maxResults=' + COMMENT_SCAN_MAX + '&orderBy=-created'
+        );
+        const comments = (data && data.comments) || [];
+        const texts = comments.map(c => commentBodyToText(c && c.body)).filter(Boolean);
+        byKey[key] = analyzeCommentSignals(texts);
+      } catch(err){
+        if(!firstError) firstError = err;
+        const status = err && err.status;
+        const msg = (err && err.message) || '';
+        if(status === 401 || status === 403 || /scope/i.test(msg)){
+          scopeBlocked = true;
+        }
+        byKey[key] = analyzeCommentSignals([]);
+      }
+    }));
+  }
+
+  // Fill remaining keys with empty signals if we aborted early.
+  for(const key of keys){
+    if(!byKey[key]) byKey[key] = analyzeCommentSignals([]);
+  }
+
+  let error = null;
+  if(firstError){
+    const status = firstError.status;
+    const msg = firstError.message || String(firstError);
+    if(status === 401 || status === 403 || /scope/i.test(msg)){
+      error = 'Comments could not be read (token needs read:jira-work / comment access). ' +
+        'Waiting lane will use subtasks only until comments are available. Details: ' + msg;
+    } else {
+      error = 'Comments fetch failed: ' + msg;
+    }
+  }
+
+  return { byKey, error };
 }
 
 /**
@@ -333,17 +464,21 @@ async function fetchJiraData(){
   const activeKeys = activeIssues.map(i => i.key);
   const closedKeys = closedIssues.map(i => i.key);
 
-  const [activeSubs, closedSubs, contentResult] = await Promise.all([
+  const [activeSubs, closedSubs, contentResult, commentsResult] = await Promise.all([
     fetchSubtasksForParents(activeKeys, currentAccountId, true),
     fetchSubtasksForParents(closedKeys, currentAccountId, false),
-    fetchContentTickets(currentAccountId, fieldIds)
+    fetchContentTickets(currentAccountId, fieldIds),
+    fetchCommentsForParents(activeKeys)
   ]);
+
+  const commentSignalsByKey = (commentsResult && commentsResult.byKey) || {};
 
   return {
     currentUserFirstName,
-    activeTickets: activeIssues.map(i => mapActiveTicket(i, activeSubs, currentAccountId, fieldIds)),
+    activeTickets: activeIssues.map(i => mapActiveTicket(i, activeSubs, currentAccountId, fieldIds, commentSignalsByKey)),
     recentlyClosedTickets: closedIssues.map(i => mapClosedTicket(i, closedSubs, currentAccountId)),
     contentTickets: contentResult.tickets || [],
-    contentJql: contentResult.jql || DEFAULT_CONTENT_JQL
+    contentJql: contentResult.jql || DEFAULT_CONTENT_JQL,
+    commentsWarning: (commentsResult && commentsResult.error) || null
   };
 }

@@ -283,6 +283,11 @@
   .spinner{width:28px;height:28px;border:3px solid var(--panel-border);border-top-color:var(--accent-pink);border-radius:50%;animation:spin 0.8s linear infinite;}
   .error-box{background:var(--band-red-bg);border:1px solid rgba(251,69,112,.3);border-radius:var(--radius-md);padding:20px;color:var(--text-primary);font-size:13.5px;}
   .error-box button{margin-top:10px;background:var(--band-red);border:none;color:#fff;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12.5px;font-weight:600;}
+  .comments-warning{
+    margin:0 0 14px;padding:10px 12px;border-radius:var(--radius-md);
+    background:var(--band-orange-bg);border:1px solid rgba(255,149,0,.28);
+    color:var(--text-primary);font-size:12.5px;line-height:1.45;
+  }
 
   /* ---------- CONFIG ---------- */
   .config-card{background:var(--panel);border:1px solid var(--panel-border);border-radius:var(--radius-md);padding:24px 28px;max-width:560px;}

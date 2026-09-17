@@ -151,7 +151,11 @@ function renderTicketList(){
   const byLane = { attention: [], action: [], waiting: [] };
   scored.forEach(item => { (byLane[item.lane] || byLane.action).push(item); });
 
-  container.innerHTML = SOLO_LANES.map(lane => {
+  const commentsWarning = STATE.data && STATE.data.commentsWarning
+    ? '<div class="comments-warning" role="status">'+escapeHtml(STATE.data.commentsWarning)+'</div>'
+    : '';
+
+  container.innerHTML = commentsWarning + SOLO_LANES.map(lane => {
     const items = byLane[lane.id] || [];
     let cards;
     if(!items.length){
@@ -407,7 +411,7 @@ function renderBottomStrip(){
 
   const dueToday = dueTodayTickets(tickets);
   const atRisk = scored.filter(({model}) => model.stageGap > 0);
-  const waiting = scored.filter(({model}) => isWaitingOnOthers(model));
+  const waiting = scored.filter(({t, model}) => isWaitingOnOthers(model, t));
 
   let publishState = 'off';
   if(dueToday.length){

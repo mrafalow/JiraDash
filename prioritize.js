@@ -260,13 +260,35 @@ const BLOCKER_WHY = {
   TRANSLATIONS: 'Translations pending'
 };
 
-function isWaitingOnOthers(model){
+function isWaitingOnSubtask(model){
   return !!(model.currentOpen && !model.currentOpen.missing &&
     model.currentOpen.subtask && model.currentOpen.subtask.assigneeIsCurrentUser === false);
 }
 
+function commentSignalsOf(ticket){
+  return (ticket && ticket.commentSignals) || null;
+}
+
+/** True when recent comments say we're blocked / waiting on someone else. */
+function isWaitingOnComments(ticket){
+  const sig = commentSignalsOf(ticket);
+  return !!(sig && sig.waitingOnOthers);
+}
+
+/**
+ * Partner owes images/assets before Media handoff — Partner field set + comment signal.
+ */
+function isWaitingOnPartnerAssets(ticket){
+  const sig = commentSignalsOf(ticket);
+  return !!(ticket && ticket.partner && sig && sig.waitingOnPartnerAssets);
+}
+
+function isWaitingOnOthers(model, ticket){
+  return isWaitingOnSubtask(model) || isWaitingOnComments(ticket);
+}
+
 function classifySoloLane(ticket, model, scoring){
-  if(isWaitingOnOthers(model)) return 'waiting';
+  if(isWaitingOnOthers(model, ticket)) return 'waiting';
   const dueSoon = scoring.daysUntilDue <= DUE_SOON_DAYS;
   const highScore = scoring.score >= ATTENTION_SCORE_MIN;
   if(dueSoon || highScore) return 'attention';
@@ -279,42 +301,119 @@ function firstNameFromDisplay(name){
   return part || 'there';
 }
 
-/**
- * Ready-to-send Waiting nudge payload for a ticket already in the waiting lane.
- * Returns null when the ticket is not blocked on someone else.
- */
-function buildWaitingNudge(ticket, model, scoring){
-  if(!isWaitingOnOthers(model)) return null;
-  const co = model.currentOpen;
-  const st = co.subtask;
-  const type = co.type;
-  const blockerType = STAGE_LABELS[type] || type || 'Blocker';
-  const blockerWhy = BLOCKER_WHY[type] || (blockerType + ' pending with someone else');
-  const assigneeName = st.assigneeName || 'Unassigned';
-  const today = todayMid();
-  const openDays = st.createdDate != null ? businessDaysBetween(atMidnight(st.createdDate), today) : null;
+function dueLabelFromScoring(scoring){
   let dueLabel = '—';
   if(scoring && typeof scoring.daysUntilDue === 'number'){
     if(scoring.daysUntilDue === 0) dueLabel = 'Today';
     else if(scoring.daysUntilDue < 0) dueLabel = Math.abs(scoring.daysUntilDue) + 'd overdue';
     else dueLabel = 'In ' + scoring.daysUntilDue + 'd';
   }
+  return dueLabel;
+}
+
+/**
+ * Ready-to-send Waiting nudge payload for a ticket already in the waiting lane.
+ * Returns null when the ticket is not blocked on someone else.
+ * Partner + waiting-on-images comments → nudge aimed at Partner (not Media yet).
+ */
+function buildWaitingNudge(ticket, model, scoring){
+  if(!isWaitingOnOthers(model, ticket)) return null;
+
+  const dueLabel = dueLabelFromScoring(scoring);
   const dueFmt = fmtDate(ticket.dueDate);
   const summary = (ticket.summary || '').trim() || ticket.key;
-  const first = firstNameFromDisplay(st.assigneeName);
-  const openBit = openDays != null ? ' (open ' + openDays + 'd)' : '';
-  const nudgeText = 'Hi ' + first + ' — gentle nudge on ' + blockerType + ' for "' + summary +
-    '" (' + ticket.key + ')' + openBit + '. Due ' + dueFmt + '. Any ETA? Thanks!';
+  const sig = commentSignalsOf(ticket);
+
+  // Partner owes assets — prefer Partner-oriented nudge over Media subtask assignee.
+  if(isWaitingOnPartnerAssets(ticket)){
+    const partnerName = ticket.partner;
+    const first = firstNameFromDisplay(partnerName);
+    let why = 'Waiting on images/assets from Partner before Media handoff';
+    if(sig && sig.dateAdjusted) why += ' · due date adjusted';
+    const dateBit = (sig && sig.dateAdjusted) ? ' Date was adjusted.' : '';
+    const nudgeText = 'Hi ' + first + ' — gentle nudge: still waiting on images/assets for "' +
+      summary + '" (' + ticket.key + ').' + dateBit + ' Due ' + dueFmt +
+      '. Any ETA before we hand off to Media? Thanks!';
+    return {
+      blockerType: 'Partner assets',
+      blockerWhy: why,
+      assigneeName: partnerName,
+      dueLabel,
+      dueFmt,
+      openDays: null,
+      nudgeText,
+      subtaskKey: null,
+      stageType: 'PARTNER'
+    };
+  }
+
+  // Subtask-based waiting (existing path) — keep when open stage sits with someone else.
+  if(isWaitingOnSubtask(model)){
+    const co = model.currentOpen;
+    const st = co.subtask;
+    const type = co.type;
+    const blockerType = STAGE_LABELS[type] || type || 'Blocker';
+    let blockerWhy = BLOCKER_WHY[type] || (blockerType + ' pending with someone else');
+    if(sig && sig.waitingOnImages) blockerWhy += ' · comments mention waiting on images/assets';
+    else if(sig && sig.dateAdjusted) blockerWhy += ' · comments mention due date adjusted';
+    const assigneeName = st.assigneeName || 'Unassigned';
+    const today = todayMid();
+    const openDays = st.createdDate != null ? businessDaysBetween(atMidnight(st.createdDate), today) : null;
+    const first = firstNameFromDisplay(st.assigneeName);
+    const openBit = openDays != null ? ' (open ' + openDays + 'd)' : '';
+    let nudgeText = 'Hi ' + first + ' — gentle nudge on ' + blockerType + ' for "' + summary +
+      '" (' + ticket.key + ')' + openBit + '. Due ' + dueFmt + '. Any ETA? Thanks!';
+    if(sig && sig.waitingOnImages){
+      nudgeText = 'Hi ' + first + ' — gentle nudge on ' + blockerType + ' for "' + summary +
+        '" (' + ticket.key + ')' + openBit + '. Still waiting on images/assets. Due ' + dueFmt + '. Any ETA? Thanks!';
+    } else if(sig && sig.dateAdjusted){
+      nudgeText = 'Hi ' + first + ' — gentle nudge on ' + blockerType + ' for "' + summary +
+        '" (' + ticket.key + ')' + openBit + '. Due date was adjusted — now ' + dueFmt + '. Any ETA? Thanks!';
+    }
+    return {
+      blockerType,
+      blockerWhy,
+      assigneeName,
+      dueLabel,
+      dueFmt,
+      openDays,
+      nudgeText,
+      subtaskKey: st.key || null,
+      stageType: type
+    };
+  }
+
+  // Comment-only waiting (no subtask assignee blocker).
+  let blockerType = 'Waiting';
+  let blockerWhy = 'Blocked per recent comment';
+  let nudgeFocus = 'this item';
+  if(sig && sig.waitingOnImages){
+    blockerType = 'Images / assets';
+    blockerWhy = 'Waiting on images/assets (from comments)';
+    nudgeFocus = 'images/assets';
+  } else if(sig && sig.dateAdjusted){
+    blockerType = 'Date change';
+    blockerWhy = 'Due date adjusted (from comments)';
+    nudgeFocus = 'the adjusted due date';
+  }
+  if(sig && sig.matchSnippet){
+    blockerWhy += ' — "' + sig.matchSnippet.slice(0, 80) + (sig.matchSnippet.length > 80 ? '…' : '') + '"';
+  }
+  const who = ticket.partner || 'there';
+  const first = firstNameFromDisplay(who);
+  const dateBit = (sig && sig.dateAdjusted) ? ' Date was adjusted.' : '';
+  const nudgeText = 'Hi ' + first + ' — gentle nudge: still waiting on ' + nudgeFocus + ' for "' +
+    summary + '" (' + ticket.key + ').' + dateBit + ' Due ' + dueFmt + '. Any ETA? Thanks!';
 
   return {
     blockerType,
     blockerWhy,
-    assigneeName,
+    assigneeName: ticket.partner || 'Someone else',
     dueLabel,
     dueFmt,
-    openDays,
+    openDays: null,
     nudgeText,
-    subtaskKey: st.key || null,
-    stageType: type
+    subtaskKey: null,
+    stageType: 'COMMENT'
   };
 }
