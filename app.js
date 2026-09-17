@@ -149,7 +149,7 @@ function renderTicketList(){
     return { t, model, scoring, lane, lanes };
   }).sort((a,b) => b.scoring.score - a.scoring.score);
 
-  // Dual-list: Waiting tickets also land in Action; Attention stays exclusive.
+  // Dual-list: Attention+Waiting OK; Waiting+Action only when not Needs Attention.
   const byLane = { attention: [], action: [], waiting: [] };
   scored.forEach(item => {
     (item.lanes || [item.lane]).forEach(laneId => {

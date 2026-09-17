@@ -240,12 +240,12 @@ function doNotPublishEarlyFromText(text){
 }
 
 /**
- * Solo Work lanes — primary order waiting > attention > action.
- * Waiting also dual-lists into Action (see soloLanesForTicket); Attention stays exclusive.
+ * Solo Work lanes — urgency drives Needs Attention; Waiting never blocks it.
+ * Dual lists: Attention+Waiting OK; Waiting+Action only when not Needs Attention.
  */
 const SOLO_LANES = [
   { id: 'attention', title: 'Needs Attention', hint: 'Due soon or high urgency' },
-  { id: 'action', title: 'My Action Items', hint: 'Yours to work — includes items waiting on others' },
+  { id: 'action', title: 'My Action Items', hint: 'Yours to work — waiting items stay here unless urgent' },
   { id: 'waiting', title: 'Waiting on Others', hint: 'Blocked on someone else — draft nudge ready to send' }
 ];
 const DUE_SOON_DAYS = 2;
@@ -290,23 +290,37 @@ function isWaitingOnOthers(model, ticket){
   return isWaitingOnSubtask(model) || isWaitingOnComments(ticket);
 }
 
-/** Primary Solo lane (waiting wins over attention/action). */
+/** True when scoring / pipeline timing says this ticket Needs Attention. */
+function meetsNeedsAttention(scoring){
+  if(!scoring) return false;
+  const dueSoon = typeof scoring.daysUntilDue === 'number' && scoring.daysUntilDue <= DUE_SOON_DAYS;
+  const highScore = typeof scoring.score === 'number' && scoring.score >= ATTENTION_SCORE_MIN;
+  return dueSoon || highScore;
+}
+
+/**
+ * Primary Solo lane — urgency (Needs Attention) wins over Waiting; Waiting wins over Action.
+ * Membership for dual-list rendering uses soloLanesForTicket.
+ */
 function classifySoloLane(ticket, model, scoring){
+  if(meetsNeedsAttention(scoring)) return 'attention';
   if(isWaitingOnOthers(model, ticket)) return 'waiting';
-  const dueSoon = scoring.daysUntilDue <= DUE_SOON_DAYS;
-  const highScore = scoring.score >= ATTENTION_SCORE_MIN;
-  if(dueSoon || highScore) return 'attention';
   return 'action';
 }
 
 /**
  * All Solo sections a ticket should appear in.
- * Waiting ⊆ Action (dual list). Needs Attention stays its own lane only.
+ * - Needs Attention + Waiting: dual list (urgency + nudge)
+ * - Waiting only (not urgent): dual list into Action
+ * - Needs Attention alone: Attention only (not duplicated into Action)
  */
 function soloLanesForTicket(ticket, model, scoring){
-  const primary = classifySoloLane(ticket, model, scoring);
-  if(primary === 'waiting') return ['waiting', 'action'];
-  return [primary];
+  const attention = meetsNeedsAttention(scoring);
+  const waiting = isWaitingOnOthers(model, ticket);
+  if(attention && waiting) return ['attention', 'waiting'];
+  if(attention) return ['attention'];
+  if(waiting) return ['waiting', 'action'];
+  return ['action'];
 }
 
 function firstNameFromDisplay(name){
