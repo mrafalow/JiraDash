@@ -25,12 +25,17 @@
     --font-body:'Inter',sans-serif;
   }
   *{box-sizing:border-box;}
+  html,body{height:100%;}
   body{margin:0;background:var(--bg);color:var(--text-primary);font-family:var(--font-body);}
-  .app{display:grid;grid-template-columns:252px 1fr;min-height:100vh;}
+  .app{display:grid;grid-template-columns:252px 1fr;min-height:100vh;min-height:100dvh;}
   .app.collapsed{grid-template-columns:76px 1fr;}
 
   /* ---------- SIDEBAR ---------- */
-  .sidebar{background:var(--bg-elevated);border-right:1px solid var(--panel-border);display:flex;flex-direction:column;padding:22px 16px;transition:padding .2s;}
+  .sidebar{
+    background:var(--bg-elevated);border-right:1px solid var(--panel-border);
+    display:flex;flex-direction:column;padding:22px 16px;transition:padding .2s,width .2s;
+    position:sticky;top:0;align-self:start;height:100vh;height:100dvh;overflow-y:auto;
+  }
   .app.collapsed .sidebar{padding:22px 12px;align-items:center;}
   .logo-row{display:flex;align-items:center;gap:10px;padding:0 6px 22px;}
   .logo-mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--accent-pink),var(--accent-purple));flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:17px;color:#fff;}
@@ -49,9 +54,14 @@
   .nav-item.disabled.active{background:transparent;color:var(--text-secondary);filter:grayscale(.55);}
   .app.collapsed .nav-item{justify-content:center;padding:10px;}
   .app.collapsed .nav-item span.label{display:none;}
-  .sidebar-spacer{flex:1;}
-  .collapse-btn{display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:10px;cursor:pointer;color:var(--text-tertiary);font-size:13px;border:none;background:none;font-family:var(--font-body);}
-  .collapse-btn:hover{color:var(--text-secondary);}
+  .sidebar-spacer{flex:1;min-height:12px;}
+  .sidebar-footer{margin-top:auto;padding-top:10px;border-top:1px solid var(--panel-border);flex-shrink:0;width:100%;}
+  .app.collapsed .sidebar-footer{border-top-color:transparent;display:flex;flex-direction:column;align-items:center;}
+  .collapse-btn{display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:10px;cursor:pointer;color:var(--text-secondary);font-size:13px;border:none;background:none;font-family:var(--font-body);width:100%;}
+  .collapse-btn:hover{color:var(--text-primary);background:var(--panel-hover);}
+  .app.collapsed .collapse-btn{justify-content:center;padding:10px;width:auto;}
+  .app.collapsed .collapse-btn span.label{display:none;}
+  .app.collapsed .collapse-btn svg{transform:rotate(180deg);}
 
   /* ---------- MAIN ---------- */
   .main{padding:30px 40px 48px;max-width:1180px;}
@@ -68,9 +78,38 @@
   .section-title{font-size:13px;font-weight:600;color:var(--text-secondary);letter-spacing:.04em;margin-bottom:12px;display:flex;align-items:center;gap:8px;}
 
   /* ---------- DUE CALENDAR + HORIZON ---------- */
+  /* Row height is driven by the calendar column; list locks to that height and scrolls. */
   .horizon-grid{display:grid;grid-template-columns:minmax(260px,320px) 1fr;gap:18px;align-items:start;}
-  @media (max-width:900px){.horizon-grid{grid-template-columns:1fr;}}
   .calendar-panel,.horizon-panel{background:var(--panel);border:1px solid var(--panel-border);border-radius:var(--radius-md);padding:16px 18px 18px;}
+  .calendar-panel{grid-column:1;grid-row:1;width:100%;}
+  .horizon-panel{
+    grid-column:2;grid-row:1;
+    /* height:0 + min-height:100% locks panel to calendar row height (no grow/shrink with list length) */
+    height:0;min-height:100%;
+    display:flex;flex-direction:column;overflow:hidden;min-width:0;
+  }
+  .horizon-panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-shrink:0;}
+  .horizon-panel-head .section-title{margin-bottom:0;}
+  .horizon-show-all{border:1px solid var(--panel-border);background:var(--bg-elevated);color:var(--text-primary);font-size:12px;font-weight:600;padding:6px 12px;border-radius:8px;cursor:pointer;flex-shrink:0;transition:background .15s,color .15s,border-color .15s;}
+  .horizon-show-all:hover{background:var(--panel-hover);border-color:var(--band-blue);color:var(--band-blue);}
+  #horizonList{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;}
+  .horizon-list{display:flex;flex-direction:column;}
+  .horizon-item{display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid var(--panel-border);}
+  .horizon-item:last-child{border-bottom:none;}
+  .horizon-rank{font-family:var(--font-display);font-weight:700;font-size:14px;color:var(--text-tertiary);width:18px;flex-shrink:0;}
+  .horizon-main{flex:1;min-width:0;}
+  .horizon-key{font-size:12px;font-weight:600;color:var(--band-blue);margin-bottom:2px;}
+  .horizon-item.kind-content .horizon-key{color:var(--accent-pink);}
+  .horizon-summary{font-size:13px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .horizon-due{font-size:12px;font-weight:600;color:var(--text-secondary);flex-shrink:0;text-align:right;min-width:72px;}
+  .horizon-due.overdue{color:var(--band-red);}
+  .horizon-due.today{color:var(--band-orange);}
+  .horizon-empty{font-size:13px;color:var(--text-tertiary);padding:8px 2px;}
+  @media (max-width:900px){
+    .horizon-grid{grid-template-columns:1fr;}
+    .calendar-panel,.horizon-panel{grid-column:auto;grid-row:auto;}
+    .horizon-panel{height:auto;min-height:280px;max-height:min(60vh,480px);}
+  }
   .cal-month-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;}
   .cal-month-label{font-family:var(--font-display);font-size:15px;font-weight:600;color:var(--text-primary);text-align:center;flex:1;}
   .cal-nav-btn{width:30px;height:30px;border-radius:8px;border:1px solid var(--panel-border);background:var(--bg-elevated);color:var(--text-secondary);font-size:18px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s,color .15s;}
@@ -101,22 +140,6 @@
   .cal-today-note b{color:var(--text-primary);font-weight:600;}
   .cal-legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:11px;color:var(--text-tertiary);font-weight:500;}
   .cal-legend-item{display:inline-flex;align-items:center;gap:6px;}
-  .horizon-panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;}
-  .horizon-panel-head .section-title{margin-bottom:0;}
-  .horizon-show-all{border:1px solid var(--panel-border);background:var(--bg-elevated);color:var(--text-primary);font-size:12px;font-weight:600;padding:6px 12px;border-radius:8px;cursor:pointer;flex-shrink:0;transition:background .15s,color .15s,border-color .15s;}
-  .horizon-show-all:hover{background:var(--panel-hover);border-color:var(--band-blue);color:var(--band-blue);}
-  .horizon-list{display:flex;flex-direction:column;}
-  .horizon-item{display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid var(--panel-border);}
-  .horizon-item:last-child{border-bottom:none;}
-  .horizon-rank{font-family:var(--font-display);font-weight:700;font-size:14px;color:var(--text-tertiary);width:18px;flex-shrink:0;}
-  .horizon-main{flex:1;min-width:0;}
-  .horizon-key{font-size:12px;font-weight:600;color:var(--band-blue);margin-bottom:2px;}
-  .horizon-item.kind-content .horizon-key{color:var(--accent-pink);}
-  .horizon-summary{font-size:13px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .horizon-due{font-size:12px;font-weight:600;color:var(--text-secondary);flex-shrink:0;text-align:right;min-width:72px;}
-  .horizon-due.overdue{color:var(--band-red);}
-  .horizon-due.today{color:var(--band-orange);}
-  .horizon-empty{font-size:13px;color:var(--text-tertiary);padding:8px 2px;}
 
   /* ---------- SOLO LANES ---------- */
   .solo-lane{margin-bottom:22px;}

@@ -830,7 +830,14 @@ function resetConfigToDefaults(){
 
 document.getElementById('refreshBtn').addEventListener('click', () => loadAll(true));
 document.getElementById('collapseBtn').addEventListener('click', () => {
-  document.getElementById('app').classList.toggle('collapsed');
+  const app = document.getElementById('app');
+  app.classList.toggle('collapsed');
+  const collapsed = app.classList.contains('collapsed');
+  const btn = document.getElementById('collapseBtn');
+  const label = btn.querySelector('.label');
+  if(label) label.textContent = collapsed ? 'Expand' : 'Collapse';
+  btn.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+  btn.setAttribute('title', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
 });
 document.querySelectorAll('.nav-item[data-view]').forEach(el => {
   el.addEventListener('click', () => {
