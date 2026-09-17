@@ -123,6 +123,42 @@
   .content-table .content-summary{color:var(--text-primary);font-weight:600;max-width:360px;}
   .content-empty{font-size:13px;color:var(--text-tertiary);padding:8px 2px;}
 
+  /* ---------- ASSIGNEE × STATUS MATRIX (Step 5) ---------- */
+  .matrix-block{margin-top:22px;}
+  .matrix-hint{font-size:12px;color:var(--text-tertiary);margin:-2px 0 12px;}
+  .matrix-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  table.matrix-table{
+    width:100%;border-collapse:collapse;font-size:13px;
+    background:var(--panel);border:1px solid var(--panel-border);border-radius:var(--radius-md);overflow:hidden;
+  }
+  table.matrix-table th, table.matrix-table td{
+    padding:10px 12px;border-bottom:1px solid var(--panel-border);text-align:right;white-space:nowrap;
+  }
+  table.matrix-table th{
+    font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-tertiary);font-weight:600;
+  }
+  table.matrix-table th.matrix-corner, table.matrix-table td.matrix-assignee{
+    text-align:left;color:var(--text-primary);font-weight:600;
+  }
+  table.matrix-table td.matrix-assignee.ms-assignee{color:var(--band-gold);}
+  table.matrix-table tr:last-child th, table.matrix-table tr:last-child td{border-bottom:none;}
+  table.matrix-table tfoot th, table.matrix-table tfoot td{
+    color:var(--text-secondary);font-weight:700;background:rgba(255,255,255,.03);
+  }
+  table.matrix-table .matrix-zero{color:var(--text-tertiary);font-weight:500;}
+  table.matrix-table .matrix-stall{
+    color:var(--band-orange);font-weight:700;background:rgba(251,146,60,.08);
+  }
+  .ms-stall-line{
+    margin-top:12px;padding:12px 14px;border-radius:10px;font-size:13px;line-height:1.45;
+    border:1px solid var(--panel-border);background:var(--panel);color:var(--text-secondary);
+  }
+  .ms-stall-line.stalled{
+    border-color:rgba(251,146,60,.35);background:rgba(251,146,60,.08);color:var(--text-primary);
+  }
+  .ms-stall-line.clear{border-color:rgba(52,211,153,.25);background:rgba(52,211,153,.06);}
+  .ms-stall-line b{color:var(--text-primary);font-weight:600;}
+
   /* ---------- WAITING NUDGE CARDS ---------- */
   .nudge-card{
     background:var(--panel);
@@ -246,6 +282,14 @@
   .config-sub{font-size:12.5px;color:var(--text-tertiary);margin-top:2px;}
   .config-input{width:70px;background:var(--bg-elevated);border:1px solid var(--panel-border);color:var(--text-primary);border-radius:8px;padding:8px 10px;font-size:14px;text-align:center;font-family:var(--font-body);}
   .config-input:focus{outline:none;border-color:var(--accent-pink);}
+  .config-row-stack{align-items:flex-start;flex-direction:column;}
+  .config-textarea{
+    width:100%;min-height:72px;resize:vertical;box-sizing:border-box;
+    background:var(--bg-elevated);border:1px solid var(--panel-border);color:var(--text-primary);
+    border-radius:8px;padding:10px 12px;font-size:13px;font-family:var(--font-body);line-height:1.4;
+  }
+  .config-textarea:focus{outline:none;border-color:var(--accent-pink);}
+  .config-sub code{font-size:11.5px;color:var(--band-blue);}
   .config-actions{display:flex;gap:10px;margin-top:20px;}
   .config-save-btn{background:linear-gradient(135deg,var(--accent-pink),var(--accent-purple));border:none;color:#fff;padding:10px 20px;border-radius:9px;cursor:pointer;font-size:13.5px;font-weight:600;font-family:var(--font-body);}
   .config-reset-btn{background:none;border:1px solid var(--panel-border);color:var(--text-secondary);padding:10px 20px;border-radius:9px;cursor:pointer;font-size:13.5px;font-weight:600;font-family:var(--font-body);}

@@ -384,6 +384,175 @@ function formatPartnerCell(value){
   return escapeHtml(String(value));
 }
 
+/** Parent statuses treated as non-moving for MS stall (standup rule 9). */
+const MS_STALL_STATUSES = ['Not Started', 'Open', 'To Do', 'Backlog'];
+const MS_ASSIGNEES_STORAGE_KEY = 'studio-titan-ms-assignees';
+
+function normalizePersonName(name){
+  return String(name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function isStallStatus(status){
+  const n = normalizePersonName(status);
+  return MS_STALL_STATUSES.some(s => normalizePersonName(s) === n);
+}
+
+function parseMsAssigneesList(raw){
+  if(Array.isArray(raw)) return raw.map(s => String(s || '').trim()).filter(Boolean);
+  if(typeof raw !== 'string') return [];
+  return raw.split(',').map(s => s.trim()).filter(Boolean);
+}
+
+function getMsAssignees(){
+  try{
+    const raw = localStorage.getItem(MS_ASSIGNEES_STORAGE_KEY);
+    if(raw != null && String(raw).trim()){
+      const parsed = parseMsAssigneesList(raw);
+      if(parsed.length) return parsed;
+    }
+  } catch(_){ /* fall through */ }
+  const fromData = STATE.data && STATE.data.msAssignees;
+  if(Array.isArray(fromData) && fromData.length) return fromData.slice();
+  if(typeof DEFAULT_MS_ASSIGNEES !== 'undefined') return DEFAULT_MS_ASSIGNEES.slice();
+  return [];
+}
+
+function isMsAssignee(name, msList){
+  const n = normalizePersonName(name);
+  if(!n) return false;
+  return (msList || []).some(ms => normalizePersonName(ms) === n);
+}
+
+/**
+ * Build assignee × status count matrix over Active Requests.
+ * Returns { assignees, statuses, counts[assignee][status], rowTotals, colTotals, total }
+ */
+function buildAssigneeStatusMatrix(tickets){
+  const counts = Object.create(null);
+  const statusSet = Object.create(null);
+  const assigneeSet = Object.create(null);
+  let total = 0;
+  (tickets || []).forEach(t => {
+    const assignee = (t.assigneeName && String(t.assigneeName).trim()) || 'Unassigned';
+    const status = (t.status && String(t.status).trim()) || 'Open';
+    if(!counts[assignee]) counts[assignee] = Object.create(null);
+    counts[assignee][status] = (counts[assignee][status] || 0) + 1;
+    statusSet[status] = true;
+    assigneeSet[assignee] = true;
+    total += 1;
+  });
+  const statuses = Object.keys(statusSet).sort((a, b) => {
+    const aStall = isStallStatus(a) ? 0 : 1;
+    const bStall = isStallStatus(b) ? 0 : 1;
+    if(aStall !== bStall) return aStall - bStall;
+    return a.localeCompare(b);
+  });
+  const msList = getMsAssignees();
+  const assignees = Object.keys(assigneeSet).sort((a, b) => {
+    const aMs = isMsAssignee(a, msList) ? 0 : 1;
+    const bMs = isMsAssignee(b, msList) ? 0 : 1;
+    if(aMs !== bMs) return aMs - bMs;
+    return a.localeCompare(b);
+  });
+  const rowTotals = Object.create(null);
+  const colTotals = Object.create(null);
+  statuses.forEach(s => { colTotals[s] = 0; });
+  assignees.forEach(a => {
+    let row = 0;
+    statuses.forEach(s => {
+      const n = (counts[a] && counts[a][s]) || 0;
+      row += n;
+      colTotals[s] += n;
+    });
+    rowTotals[a] = row;
+  });
+  return { assignees, statuses, counts, rowTotals, colTotals, total };
+}
+
+/** Flag configured MS names stuck in Not Started / non-moving statuses. */
+function buildMsStallReport(matrix, msList){
+  const stalls = [];
+  const names = msList || [];
+  names.forEach(name => {
+    const key = (matrix.assignees || []).find(a => normalizePersonName(a) === normalizePersonName(name));
+    if(!key) return;
+    const byStatus = matrix.counts[key] || {};
+    const parts = [];
+    let stallCount = 0;
+    Object.keys(byStatus).forEach(status => {
+      if(!isStallStatus(status)) return;
+      const n = byStatus[status] || 0;
+      if(n > 0){
+        stallCount += n;
+        parts.push(n + ' ' + status);
+      }
+    });
+    if(stallCount > 0){
+      stalls.push({ name: key, count: stallCount, detail: parts.join(', ') });
+    }
+  });
+  return stalls;
+}
+
+function renderAssigneeStatusMatrix(){
+  const section = document.getElementById('assigneeStatusMatrix');
+  const wrap = document.getElementById('matrixWrap');
+  const stallEl = document.getElementById('msStallLine');
+  if(!section || !wrap || !stallEl) return;
+
+  const show = STATE.tableMode === 'active' && STATE.data && Array.isArray(STATE.data.activeTickets);
+  section.style.display = show ? 'block' : 'none';
+  if(!show) return;
+
+  const tickets = STATE.data.activeTickets;
+  const matrix = buildAssigneeStatusMatrix(tickets);
+  const msList = getMsAssignees();
+
+  if(!matrix.total){
+    wrap.innerHTML = '<div class="empty-state"><b>No active requests</b>Assignee × status counts will appear here.</div>';
+    stallEl.className = 'ms-stall-line clear';
+    stallEl.textContent = 'Managed Services stall check: nothing stalled — no Active Requests on the board.';
+    return;
+  }
+
+  const head = '<tr><th class="matrix-corner">Assignee</th>' +
+    matrix.statuses.map(s => '<th>'+escapeHtml(s)+'</th>').join('') +
+    '<th>Total</th></tr>';
+  const body = matrix.assignees.map(a => {
+    const msClass = isMsAssignee(a, msList) ? ' ms-assignee' : '';
+    const cells = matrix.statuses.map(s => {
+      const n = (matrix.counts[a] && matrix.counts[a][s]) || 0;
+      const stall = isMsAssignee(a, msList) && isStallStatus(s) && n > 0;
+      const cls = stall ? 'matrix-stall' : (n ? '' : 'matrix-zero');
+      return '<td class="'+cls+'">'+(n || '·')+'</td>';
+    }).join('');
+    return '<tr><td class="matrix-assignee'+msClass+'">'+escapeHtml(a)+'</td>' +
+      cells +
+      '<td>'+matrix.rowTotals[a]+'</td></tr>';
+  }).join('');
+  const foot = '<tr><th class="matrix-corner">Total</th>' +
+    matrix.statuses.map(s => '<td>'+(matrix.colTotals[s] || 0)+'</td>').join('') +
+    '<td>'+matrix.total+'</td></tr>';
+
+  wrap.innerHTML =
+    '<div class="matrix-scroll"><table class="matrix-table"><thead>'+head+'</thead><tbody>'+body+'</tbody><tfoot>'+foot+'</tfoot></table></div>' +
+    '<div class="matrix-hint" style="margin-top:10px;margin-bottom:0;">Matrix total '+matrix.total+' · Active Requests '+tickets.length+(matrix.total === tickets.length ? ' (match)' : ' (mismatch)')+'</div>';
+
+  const stalls = buildMsStallReport(matrix, msList);
+  if(stalls.length){
+    stallEl.className = 'ms-stall-line stalled';
+    stallEl.innerHTML = '<b>Managed Services stall:</b> ' +
+      stalls.map(s => escapeHtml(s.name) + ' — ' + escapeHtml(s.detail)).join('; ') +
+      '. Follow up before these hit Needs Attention.';
+  } else {
+    stallEl.className = 'ms-stall-line clear';
+    const watched = msList.length
+      ? 'Watched: ' + msList.join(', ') + '.'
+      : 'No MS names configured.';
+    stallEl.textContent = 'Managed Services stall check: nothing stalled on Active Requests. ' + watched;
+  }
+}
+
 function contentDueLabel(dueDate){
   if(!dueDate) return '—';
   const today = todayMid();
@@ -589,6 +758,7 @@ async function loadAll(spinning){
     renderTicketList();
     renderBottomStrip();
     renderTable();
+    renderAssigneeStatusMatrix();
     renderContentDelivery();
     renderTranslations();
     renderCopy();
@@ -603,6 +773,8 @@ async function loadAll(spinning){
     const active = document.getElementById('contentListActive');
     if(solo) solo.innerHTML = emptyContent;
     if(active) active.innerHTML = emptyContent;
+    const matrixSection = document.getElementById('assigneeStatusMatrix');
+    if(matrixSection) matrixSection.style.display = 'none';
   } finally {
     clearInterval(rotateInterval);
     if(spinning) btn.classList.remove('spinning');
@@ -629,6 +801,8 @@ function populateConfigForm(){
     const el = document.getElementById('cfg_' + k);
     if(el) el.value = BIZ[k];
   });
+  const msEl = document.getElementById('cfg_MS_ASSIGNEES');
+  if(msEl) msEl.value = getMsAssignees().join(', ');
   const note = document.getElementById('configSavedNote');
   if(note) note.textContent = '';
 }
@@ -651,6 +825,15 @@ function saveConfig(){
   } catch(err){
     // in-memory still updated
   }
+  const msEl = document.getElementById('cfg_MS_ASSIGNEES');
+  if(msEl){
+    const names = parseMsAssigneesList(msEl.value);
+    try{
+      localStorage.setItem(MS_ASSIGNEES_STORAGE_KEY, names.join(', '));
+    } catch(err){
+      // ignore
+    }
+  }
   const note = document.getElementById('configSavedNote');
   note.style.color = 'var(--green)';
   note.textContent = 'Saved — scores updated below.';
@@ -659,6 +842,7 @@ function saveConfig(){
     renderTicketList();
     renderBottomStrip();
     renderTable();
+    renderAssigneeStatusMatrix();
     renderContentDelivery();
     renderTranslations();
     renderCopy();
@@ -667,6 +851,7 @@ function saveConfig(){
 
 function resetConfigToDefaults(){
   CONFIG_KEYS.forEach(k => { BIZ[k] = DEFAULT_BIZ[k]; });
+  try{ localStorage.removeItem(MS_ASSIGNEES_STORAGE_KEY); } catch(_){}
   populateConfigForm();
   saveConfig();
 }
@@ -693,12 +878,14 @@ document.getElementById('toggleActive').addEventListener('click', () => {
   document.getElementById('toggleActive').classList.add('active');
   document.getElementById('toggleClosed').classList.remove('active');
   renderTable();
+  renderAssigneeStatusMatrix();
 });
 document.getElementById('toggleClosed').addEventListener('click', () => {
   STATE.tableMode = 'closed';
   document.getElementById('toggleClosed').classList.add('active');
   document.getElementById('toggleActive').classList.remove('active');
   renderTable();
+  renderAssigneeStatusMatrix();
 });
 document.getElementById('configSaveBtn').addEventListener('click', saveConfig);
 document.getElementById('configResetBtn').addEventListener('click', resetConfigToDefaults);

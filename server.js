@@ -11,6 +11,8 @@
  *   JIRA_CLOUD_ID=<cloud id>
  * Optional CONTENT delivery JQL override (Step 6):
  *   JIRA_CONTENT_JQL=project = CONTENT AND ...
+ * Optional Managed Services display names for stall matrix (Step 5, not secret):
+ *   JIRA_MS_ASSIGNEES=Alampuru Sirisha,Alejandro Ruiz Campos,...
  */
 'use strict';
 
@@ -256,11 +258,17 @@ const server = http.createServer((req, res) => {
 
   // Non-secret field IDs / JQL overrides (secrets stay in .env only).
   if(pathname === '/api/config'){
+    const msRaw = (process.env.JIRA_MS_ASSIGNEES || '').trim();
+    const msAssignees = msRaw
+      ? msRaw.split(',').map(s => s.trim()).filter(Boolean)
+      : null;
     sendJson(res, 200, {
       partnerField: (process.env.JIRA_PARTNER_FIELD || '').trim() || 'customfield_10329',
       publishEarlyField: (process.env.JIRA_PUBLISH_EARLY_FIELD || '').trim() || 'customfield_10182',
       // Override CONTENT delivery ownership query without a code change.
-      contentJql: (process.env.JIRA_CONTENT_JQL || '').trim() || null
+      contentJql: (process.env.JIRA_CONTENT_JQL || '').trim() || null,
+      // Managed Services stall names (comma list). null → client uses code defaults.
+      msAssignees
     });
     return;
   }

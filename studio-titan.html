@@ -101,6 +101,13 @@
       </div>
       <div id="tableWrap"><div class="loading-wrap"><div class="spinner"></div>Loading&hellip;</div></div>
 
+      <section class="panel-block matrix-block" id="assigneeStatusMatrix" style="display:none;">
+        <div class="section-title">ASSIGNEE &times; STATUS &mdash; ACTIVE REQUESTS</div>
+        <div class="matrix-hint">Two-dimensional counts for the Managed Services stall check (standup rule 9).</div>
+        <div id="matrixWrap"></div>
+        <div id="msStallLine" class="ms-stall-line" aria-live="polite"></div>
+      </section>
+
       <section class="panel-block content-footer-block" id="contentDeliveryActive">
         <div class="section-title">CONTENT &mdash; DELIVERY OWNED (MANAGED ELSEWHERE)</div>
         <div class="content-hint">Tickets you are accountable for delivering; day-to-day work sits with another group.</div>
@@ -145,6 +152,13 @@
           <div class="config-row">
             <div><div class="config-label">Translations window</div><div class="config-sub">Business days allowed after actual publish</div></div>
             <input type="number" min="1" class="config-input" id="cfg_TRANSLATIONS_WINDOW">
+          </div>
+          <div class="config-row config-row-stack">
+            <div>
+              <div class="config-label">Managed Services assignees</div>
+              <div class="config-sub">Comma-separated display names for the stall matrix (not a secret). Env <code>JIRA_MS_ASSIGNEES</code> overrides the code default; this field overrides both for your browser.</div>
+            </div>
+            <textarea class="config-textarea" id="cfg_MS_ASSIGNEES" rows="3" placeholder="Alampuru Sirisha, Alejandro Ruiz Campos, …"></textarea>
           </div>
           <div class="config-actions">
             <button class="config-save-btn" id="configSaveBtn">Save</button>
