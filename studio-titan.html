@@ -14,7 +14,12 @@
   <!-- SIDEBAR -->
   <div class="sidebar" id="sidebar">
     <div class="logo-row">
-      <div class="logo-mark">T</div>
+      <div class="logo-mark" aria-hidden="true">
+        <svg class="logo-castle" width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <!-- Generic fairy-tale castle silhouette (towers + gate); not Disney Parks trademark art -->
+          <path fill="currentColor" fill-rule="evenodd" d="M2 22V11.2L4.5 9.5V6.5h1.8V8h2.2V4.8L12 2.2l3.5 2.6V8h2.2V6.5h1.8v3L22 11.2V22h-5.2v-4.5H7.2V22H2zm4.5-12.8h1.2V7.8H6.5v1.4zm11.8 0h1.2V7.8h-1.2v1.4zM10.5 5.6h1.2V4H10.5v1.6zm1.8 0h1.2V4h-1.2v1.6zM9.5 13.2h5v2.8h-5v-2.8z"/>
+        </svg>
+      </div>
       <div class="logo-text">Studio Titan</div>
     </div>
 
@@ -59,7 +64,7 @@
     <div class="nav-item disabled" data-view="copy" id="navCopy"><div class="dot-badge" style="background:#ec4899;">CP</div><span class="label">Copy</span></div>
     <div class="nav-item disabled" data-view="media" id="navMedia"><div class="dot-badge" style="background:#fb923c;">MD</div><span class="label">Media</span></div>
     <div class="nav-item disabled" data-view="alttext" id="navAlttext"><div class="dot-badge" style="background:#f4c430;">AT</div><span class="label">Alt Text &amp; Captions</span></div>
-    <div class="nav-item" data-view="translations"><div class="dot-badge" style="background:#4ea8f5;">TR</div><span class="label">Translations</span></div>
+    <div class="nav-item disabled" data-view="translations" id="navTranslations" aria-disabled="true"><div class="dot-badge" style="background:#4ea8f5;">TR</div><span class="label">Translations</span></div>
 
     <div class="sidebar-spacer"></div>
     <div class="sidebar-footer">

@@ -18,7 +18,8 @@ function iconSvg(name){
   const icons = {
     calendar: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>',
     warning: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3l9 16H3L12 3zM12 10v4M12 17.5h.01"/></svg>',
-    users: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19c0-3.3 2.9-5.5 6.5-5.5s6.5 2.2 6.5 5.5M17 8.2a3 3 0 010 5.8M21 19c0-2.5-1.8-4.3-4-5"/></svg>'
+    users: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19c0-3.3 2.9-5.5 6.5-5.5s6.5 2.2 6.5 5.5M17 8.2a3 3 0 010 5.8M21 19c0-2.5-1.8-4.3-4-5"/></svg>',
+    translate: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg>'
   };
   return icons[name] || '';
 }
@@ -444,15 +445,7 @@ function renderBottomStrip(){
     publishState = anyUnapproved ? 'red' : 'green';
   }
 
-  const condCounts = { COPY:0, MEDIA:0, ALTTEXT:0 };
-  scored.forEach(({t}) => {
-    (t.subtasks || []).forEach(st => {
-      if(Object.prototype.hasOwnProperty.call(condCounts, st.type) && st.status !== 'Closed'){
-        condCounts[st.type]++;
-      }
-    });
-  });
-  const condTotal = condCounts.COPY + condCounts.MEDIA + condCounts.ALTTEXT;
+  const translationsOpen = openTranslationsEntries().length;
 
   document.getElementById('bottomStripWrap').style.display = 'block';
   document.getElementById('bottomStrip').innerHTML =
@@ -476,16 +469,18 @@ function renderBottomStrip(){
         ? 'Waiting on Others — '+waiting.length+' ticket'+(waiting.length===1?'':'s')+' sitting with someone else. Activate to jump to Waiting section.'
         : 'Waiting on Others — nothing stalled'
     }) +
-    '<div class="strip-card donut-card">' + donutSvg(condCounts, condTotal) +
-      '<div class="donut-legend">' +
-        legendRow('var(--accent-pink)','Copy',condCounts.COPY) +
-        legendRow('var(--band-orange)','Media',condCounts.MEDIA) +
-        legendRow('var(--band-gold)','Alt Text',condCounts.ALTTEXT) +
-      '</div>' +
-    '</div>';
+    strip('translate', 'var(--band-blue)', 'Translations', translationsOpen, translationsOpen ? 'Open sub-tasks' : 'Nothing open', {
+      id: 'translationsStrip',
+      clickable: translationsOpen > 0,
+      clickableAccent: 'blue',
+      ariaLabel: translationsOpen
+        ? 'Translations — '+translationsOpen+' open. Activate to open Translations view.'
+        : 'Translations — nothing open'
+    });
 
   bindAtRiskStrip();
   bindWaitingStrip();
+  bindTranslationsStrip();
 }
 function strip(icon, color, label, value, sub, opts){
   opts = opts || {};
@@ -776,29 +771,27 @@ function bindWaitingStrip(){
     }
   });
 }
-function legendRow(color,label,count){
-  return '<div class="row"><span class="swatch" style="background:'+color+'"></span>'+label+' <span class="count">'+count+'</span></div>';
+
+function handleTranslationsActivate(){
+  if(!openTranslationsEntries().length) return;
+  const nav = document.getElementById('navTranslations') ||
+    document.querySelector('.nav-item[data-view="translations"]');
+  if(nav && !nav.classList.contains('disabled') && nav.getAttribute('aria-disabled') !== 'true'){
+    nav.click();
+  }
 }
-function donutSvg(counts, total){
-  const size=84, r=32, cx=size/2, cy=size/2, circ=2*Math.PI*r;
-  const segs = [
-    {v:counts.COPY, c:'var(--accent-pink)'},
-    {v:counts.MEDIA, c:'var(--band-orange)'},
-    {v:counts.ALTTEXT, c:'var(--band-gold)'}
-  ];
-  let offset = 0;
-  const paths = segs.map(s => {
-    const frac = total ? s.v/total : 0;
-    const len = frac*circ;
-    const dash = len+' '+(circ-len);
-    const el = '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+s.c+'" stroke-width="11" stroke-dasharray="'+dash+'" stroke-dashoffset="'+(-offset)+'" transform="rotate(-90 '+cx+' '+cy+')"/>';
-    offset += len;
-    return el;
-  }).join('');
-  return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'">' +
-    (total ? paths : '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="#2a3050" stroke-width="11"/>') +
-    '<text x="'+cx+'" y="'+(cy+5)+'" text-anchor="middle" font-family="Space Grotesk" font-weight="700" font-size="20" fill="var(--text-primary)">'+total+'</text>' +
-  '</svg>';
+
+function bindTranslationsStrip(){
+  const el = document.getElementById('translationsStrip');
+  if(!el) return;
+  if(!el.classList.contains('strip-card-clickable')) return;
+  el.addEventListener('click', handleTranslationsActivate);
+  el.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter' || e.key === ' '){
+      e.preventDefault();
+      handleTranslationsActivate();
+    }
+  });
 }
 
 function formatPublishEarlyCell(value){
@@ -921,6 +914,23 @@ function renderTable(){
   wrap.innerHTML = html;
 }
 
+/** Open (non-Closed) TRANSLATIONS on active + recently closed — same pool as Translations nav enablement. */
+function openTranslationsEntries(){
+  const entries = [];
+  const seen = new Set();
+  function consider(t){
+    const st = (t.subtasks || []).find(s => s.type === 'TRANSLATIONS');
+    if(!st || st.status === 'Closed') return;
+    const id = st.key || (t.key + ':TRANSLATIONS');
+    if(seen.has(id)) return;
+    seen.add(id);
+    entries.push({ ticket: t, st });
+  }
+  ((STATE.data && STATE.data.activeTickets) || []).forEach(consider);
+  recentlyClosedOwnTickets().forEach(consider);
+  return entries;
+}
+
 function renderTranslations(){
   const wrap = document.getElementById('translationsWrap');
   const entries = [];
@@ -1018,7 +1028,7 @@ function renderCopy(){ renderTeamSubtaskView('copy'); }
 function renderMedia(){ renderTeamSubtaskView('media'); }
 function renderAlttext(){ renderTeamSubtaskView('alttext'); }
 
-/** Enable Copy / Media / Alt Text nav only when matching open sub-tasks exist. */
+/** Enable Copy / Media / Alt Text / Translations nav only when matching open sub-tasks exist. */
 function updateTeamNavAvailability(){
   Object.keys(TEAM_VIEWS).forEach(viewKey => {
     const cfg = TEAM_VIEWS[viewKey];
@@ -1032,6 +1042,17 @@ function updateTeamNavAvailability(){
       if(solo) solo.click();
     }
   });
+  const navTr = document.getElementById('navTranslations') ||
+    document.querySelector('.nav-item[data-view="translations"]');
+  if(navTr){
+    const hasTr = openTranslationsEntries().length > 0;
+    navTr.classList.toggle('disabled', !hasTr);
+    navTr.setAttribute('aria-disabled', hasTr ? 'false' : 'true');
+    if(!hasTr && navTr.classList.contains('active')){
+      const solo = document.querySelector('.nav-item[data-view="solo"]');
+      if(solo) solo.click();
+    }
+  }
 }
 
 const LOADING_MESSAGES = [
