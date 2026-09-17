@@ -123,42 +123,22 @@ function partnerValue(fields, fieldId){
   return customFieldText(fields[fieldId || DEFAULT_PARTNER_FIELD]);
 }
 
-/** Known Managed Services display names (standup rule 9). Override with JIRA_MS_ASSIGNEES. */
-const DEFAULT_MS_ASSIGNEES = [
-  'Alampuru Sirisha',
-  'Alejandro Ruiz Campos',
-  'Subha Pandi',
-  'Sulfiya Jahir Hussain',
-  'Evelyn Chau'
-];
-
-function parseMsAssignees(raw){
-  if(Array.isArray(raw)){
-    return raw.map(s => String(s || '').trim()).filter(Boolean);
-  }
-  if(typeof raw !== 'string' || !raw.trim()) return null;
-  return raw.split(',').map(s => s.trim()).filter(Boolean);
-}
-
 async function resolveCustomFieldIds(){
   try{
     const res = await fetch('/api/config');
     if(res.ok){
       const cfg = await res.json();
-      const fromEnv = parseMsAssignees(cfg && cfg.msAssignees);
       return {
         partnerField: (cfg && cfg.partnerField) || DEFAULT_PARTNER_FIELD,
         publishEarlyField: (cfg && cfg.publishEarlyField) || DEFAULT_PUBLISH_EARLY_FIELD,
-        contentJql: (cfg && cfg.contentJql) || null,
-        msAssignees: fromEnv && fromEnv.length ? fromEnv : DEFAULT_MS_ASSIGNEES.slice()
+        contentJql: (cfg && cfg.contentJql) || null
       };
     }
   } catch(_){ /* use defaults */ }
   return {
     partnerField: DEFAULT_PARTNER_FIELD,
     publishEarlyField: DEFAULT_PUBLISH_EARLY_FIELD,
-    contentJql: null,
-    msAssignees: DEFAULT_MS_ASSIGNEES.slice()
+    contentJql: null
   };
 }
 
@@ -364,7 +344,6 @@ async function fetchJiraData(){
     activeTickets: activeIssues.map(i => mapActiveTicket(i, activeSubs, currentAccountId, fieldIds)),
     recentlyClosedTickets: closedIssues.map(i => mapClosedTicket(i, closedSubs, currentAccountId)),
     contentTickets: contentResult.tickets || [],
-    contentJql: contentResult.jql || DEFAULT_CONTENT_JQL,
-    msAssignees: (fieldIds && fieldIds.msAssignees) || DEFAULT_MS_ASSIGNEES.slice()
+    contentJql: contentResult.jql || DEFAULT_CONTENT_JQL
   };
 }
