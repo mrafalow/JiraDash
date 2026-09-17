@@ -841,18 +841,19 @@ document.getElementById('collapseBtn').addEventListener('click', () => {
 });
 document.querySelectorAll('.nav-item[data-view]').forEach(el => {
   el.addEventListener('click', () => {
-    if(el.classList.contains('disabled')) return;
+    if(el.classList.contains('disabled') || el.getAttribute('aria-disabled') === 'true') return;
     document.querySelectorAll('.nav-item[data-view]').forEach(n => n.classList.remove('active'));
     el.classList.add('active');
     const view = el.getAttribute('data-view');
-    document.getElementById('viewSolo').style.display = view === 'solo' ? 'block' : 'none';
-    document.getElementById('viewHorizon').style.display = view === 'horizon' ? 'block' : 'none';
-    document.getElementById('viewRequests').style.display = view === 'requests' ? 'block' : 'none';
-    document.getElementById('viewTranslations').style.display = view === 'translations' ? 'block' : 'none';
-    document.getElementById('viewCopy').style.display = view === 'copy' ? 'block' : 'none';
-    document.getElementById('viewMedia').style.display = view === 'media' ? 'block' : 'none';
-    document.getElementById('viewAlttext').style.display = view === 'alttext' ? 'block' : 'none';
-    document.getElementById('viewConfig').style.display = view === 'config' ? 'block' : 'none';
+    const setView = (id, on) => { const node = document.getElementById(id); if(node) node.style.display = on ? 'block' : 'none'; };
+    setView('viewSolo', view === 'solo');
+    setView('viewHorizon', view === 'horizon');
+    setView('viewRequests', view === 'requests');
+    setView('viewTranslations', view === 'translations');
+    setView('viewCopy', view === 'copy');
+    setView('viewMedia', view === 'media');
+    setView('viewAlttext', view === 'alttext');
+    setView('viewConfig', view === 'config');
     if(view === 'horizon'){
       resetCalendarToCurrentMonth();
       STATE.horizonFilterDay = null;
