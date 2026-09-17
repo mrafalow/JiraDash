@@ -553,7 +553,7 @@ function renderTable(){
 function renderTranslations(){
   const wrap = document.getElementById('translationsWrap');
   const entries = [];
-  (data.activeTickets || []).forEach(t => {
+  ((STATE.data && STATE.data.activeTickets) || []).forEach(t => {
     const st = (t.subtasks || []).find(s => s.type === 'TRANSLATIONS');
     if(st) entries.push({ ticket: t, st });
   });
@@ -655,6 +655,7 @@ function updateTeamNavAvailability(){
     if(!nav) return;
     const hasMatches = openTeamSubtaskEntries(cfg.type).length > 0;
     nav.classList.toggle('disabled', !hasMatches);
+    nav.setAttribute('aria-disabled', hasMatches ? 'false' : 'true');
     if(!hasMatches && nav.classList.contains('active')){
       const solo = document.querySelector('.nav-item[data-view="solo"]');
       if(solo) solo.click();
