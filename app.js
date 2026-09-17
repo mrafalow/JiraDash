@@ -56,6 +56,75 @@ function renderTicketCard({t, model, scoring}){
   '</div>';
 }
 
+function renderWaitingNudgeCard({t, model, scoring}){
+  const nudge = buildWaitingNudge(t, model, scoring);
+  if(!nudge) return renderTicketCard({t, model, scoring});
+
+  const tLink = jiraLink(t.key);
+  const keyHtml = tLink
+    ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+escapeHtml(t.key)+'</a>'
+    : escapeHtml(t.key);
+  const stLink = jiraLink(nudge.subtaskKey);
+  const stageHtml = stLink
+    ? '<a class="jira-link" href="'+stLink+'" target="_blank" rel="noopener">'+escapeHtml(nudge.blockerType)+'</a>'
+    : escapeHtml(nudge.blockerType);
+
+  return '<div class="nudge-card" data-key="'+escapeAttr(t.key)+'" style="--band-color:'+BAND_COLOR[scoring.band]+'">' +
+    '<div class="nudge-top">' +
+      '<div class="nudge-identity">' +
+        '<div class="nudge-key">'+keyHtml+'</div>' +
+        '<div class="nudge-summary">'+escapeHtml(t.summary||'')+'</div>' +
+      '</div>' +
+      '<div class="nudge-due" title="'+escapeAttr(nudge.dueFmt)+'">'+escapeHtml(nudge.dueLabel)+'</div>' +
+    '</div>' +
+    '<div class="nudge-meta">' +
+      '<div class="nudge-meta-item"><span class="nudge-meta-label">Blocker</span><span class="nudge-meta-val">'+stageHtml+'</span></div>' +
+      '<div class="nudge-meta-item"><span class="nudge-meta-label">Why</span><span class="nudge-meta-val">'+escapeHtml(nudge.blockerWhy)+'</span></div>' +
+      '<div class="nudge-meta-item"><span class="nudge-meta-label">Nudge</span><span class="nudge-meta-val">'+escapeHtml(nudge.assigneeName)+'</span></div>' +
+    '</div>' +
+    '<div class="nudge-message">' +
+      '<div class="nudge-message-label">Ready to send</div>' +
+      '<pre class="nudge-text" tabindex="0">'+escapeHtml(nudge.nudgeText)+'</pre>' +
+      '<button type="button" class="nudge-copy-btn" data-copy-nudge="'+escapeAttr(t.key)+'">Copy nudge</button>' +
+    '</div>' +
+  '</div>';
+}
+
+function bindNudgeCopyButtons(container){
+  container.querySelectorAll('[data-copy-nudge]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const card = btn.closest('.nudge-card');
+      const textEl = card && card.querySelector('.nudge-text');
+      const text = textEl ? textEl.textContent : '';
+      if(!text) return;
+      const done = () => {
+        const prev = btn.textContent;
+        btn.textContent = 'Copied';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = prev;
+          btn.classList.remove('copied');
+        }, 1400);
+      };
+      try{
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          await navigator.clipboard.writeText(text);
+          done();
+          return;
+        }
+      } catch(_){ /* fall through */ }
+      const range = document.createRange();
+      range.selectNodeContents(textEl);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      try{ document.execCommand('copy'); done(); } catch(_){ /* selectable still works */ }
+    });
+  });
+}
+
 function renderTicketList(){
   const container = document.getElementById('ticketList');
   const tickets = STATE.data.activeTickets;
@@ -75,9 +144,16 @@ function renderTicketList(){
 
   container.innerHTML = SOLO_LANES.map(lane => {
     const items = byLane[lane.id] || [];
-    const cards = items.length
-      ? items.map(renderTicketCard).join('')
-      : '<div class="lane-empty">Nothing in this lane</div>';
+    let cards;
+    if(!items.length){
+      cards = lane.id === 'waiting'
+        ? '<div class="lane-empty">Nothing blocked — no nudges needed</div>'
+        : '<div class="lane-empty">Nothing in this lane</div>';
+    } else if(lane.id === 'waiting'){
+      cards = items.map(renderWaitingNudgeCard).join('');
+    } else {
+      cards = items.map(renderTicketCard).join('');
+    }
     return '<div class="solo-lane" data-lane="'+lane.id+'">' +
       '<div class="lane-header">' +
         '<div class="lane-title">'+lane.title+'</div>' +
@@ -97,6 +173,7 @@ function renderTicketList(){
       renderTicketList();
     });
   });
+  bindNudgeCopyButtons(container);
 }
 
 function dueDateKey(d){

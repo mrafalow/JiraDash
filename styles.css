@@ -106,6 +106,54 @@
   .solo-lane[data-lane="attention"] .lane-title{color:var(--band-red);}
   .solo-lane[data-lane="waiting"] .lane-title{color:var(--band-orange);}
 
+  /* ---------- WAITING NUDGE CARDS ---------- */
+  .nudge-card{
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:var(--radius-md);
+    margin-bottom:10px;
+    overflow:hidden;
+    border-left:4px solid var(--band-color,var(--band-orange));
+    padding:14px 16px 16px;
+  }
+  .nudge-top{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:10px;}
+  .nudge-identity{min-width:0;flex:1;}
+  .nudge-key{font-size:12px;font-weight:600;color:var(--band-blue);margin-bottom:2px;}
+  .nudge-summary{font-size:14px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .nudge-due{font-size:12px;font-weight:600;color:var(--text-secondary);flex-shrink:0;text-align:right;min-width:72px;padding-top:2px;}
+  .nudge-meta{display:flex;flex-wrap:wrap;gap:10px 18px;margin-bottom:12px;}
+  .nudge-meta-item{display:flex;flex-direction:column;gap:2px;min-width:0;}
+  .nudge-meta-label{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-tertiary);font-weight:600;}
+  .nudge-meta-val{font-size:12.5px;color:var(--text-secondary);font-weight:600;}
+  .nudge-message{background:var(--bg-elevated);border:1px solid var(--panel-border);border-radius:8px;padding:10px 12px;}
+  .nudge-message-label{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-tertiary);font-weight:600;margin-bottom:6px;}
+  .nudge-text{
+    margin:0 0 10px;
+    font-family:var(--font-body);
+    font-size:13px;
+    line-height:1.45;
+    color:var(--text-primary);
+    white-space:pre-wrap;
+    word-break:break-word;
+    user-select:text;
+    -webkit-user-select:text;
+    cursor:text;
+  }
+  .nudge-copy-btn{
+    appearance:none;
+    border:1px solid var(--panel-border);
+    background:rgba(255,255,255,.04);
+    color:var(--text-secondary);
+    font-family:var(--font-body);
+    font-size:12px;
+    font-weight:600;
+    padding:6px 12px;
+    border-radius:7px;
+    cursor:pointer;
+  }
+  .nudge-copy-btn:hover{background:rgba(255,255,255,.08);color:var(--text-primary);}
+  .nudge-copy-btn.copied{color:var(--green);border-color:rgba(52,211,153,.35);}
+
   /* ---------- TICKET LIST ---------- */
   .ticket-card{background:var(--panel);border:1px solid var(--panel-border);border-radius:var(--radius-md);margin-bottom:9px;overflow:hidden;border-left:4px solid var(--band-color,var(--band-blue));}
   .ticket-row{display:flex;align-items:center;gap:16px;padding:14px 18px;cursor:pointer;}

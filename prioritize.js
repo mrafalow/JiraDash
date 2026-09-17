@@ -231,10 +231,22 @@ function doNotPublishEarlyFromText(text){
 const SOLO_LANES = [
   { id: 'attention', title: 'Needs Attention', hint: 'Due soon or high urgency' },
   { id: 'action', title: 'My Action Items', hint: 'Yours — not in the fire queue' },
-  { id: 'waiting', title: 'Waiting on Others', hint: 'Blocked on someone else\'s open subtask' }
+  { id: 'waiting', title: 'Waiting on Others', hint: 'Blocked on someone else — draft nudge ready to send' }
 ];
 const DUE_SOON_DAYS = 2;
 const ATTENTION_SCORE_MIN = 50;
+
+/** Blocker “why” labels for Waiting nudge cards (standup rule 5). */
+const BLOCKER_WHY = {
+  RA: 'RA approval sitting with someone else',
+  COPY: 'Copy needed from assignee',
+  MEDIA: 'Media / assets needed from assignee',
+  ALTTEXT: 'Alt text waiting on assignee',
+  PR: 'Peer review pending',
+  WF: 'Workflow unlock pending',
+  PRODVAL: 'Prod validation pending',
+  TRANSLATIONS: 'Translations pending'
+};
 
 function isWaitingOnOthers(model){
   return !!(model.currentOpen && !model.currentOpen.missing &&
@@ -247,4 +259,50 @@ function classifySoloLane(ticket, model, scoring){
   const highScore = scoring.score >= ATTENTION_SCORE_MIN;
   if(dueSoon || highScore) return 'attention';
   return 'action';
+}
+
+function firstNameFromDisplay(name){
+  if(!name) return 'there';
+  const part = String(name).trim().split(/\s+/)[0];
+  return part || 'there';
+}
+
+/**
+ * Ready-to-send Waiting nudge payload for a ticket already in the waiting lane.
+ * Returns null when the ticket is not blocked on someone else.
+ */
+function buildWaitingNudge(ticket, model, scoring){
+  if(!isWaitingOnOthers(model)) return null;
+  const co = model.currentOpen;
+  const st = co.subtask;
+  const type = co.type;
+  const blockerType = STAGE_LABELS[type] || type || 'Blocker';
+  const blockerWhy = BLOCKER_WHY[type] || (blockerType + ' pending with someone else');
+  const assigneeName = st.assigneeName || 'Unassigned';
+  const today = todayMid();
+  const openDays = st.createdDate != null ? businessDaysBetween(atMidnight(st.createdDate), today) : null;
+  let dueLabel = '—';
+  if(scoring && typeof scoring.daysUntilDue === 'number'){
+    if(scoring.daysUntilDue === 0) dueLabel = 'Today';
+    else if(scoring.daysUntilDue < 0) dueLabel = Math.abs(scoring.daysUntilDue) + 'd overdue';
+    else dueLabel = 'In ' + scoring.daysUntilDue + 'd';
+  }
+  const dueFmt = fmtDate(ticket.dueDate);
+  const summary = (ticket.summary || '').trim() || ticket.key;
+  const first = firstNameFromDisplay(st.assigneeName);
+  const openBit = openDays != null ? ' (open ' + openDays + 'd)' : '';
+  const nudgeText = 'Hi ' + first + ' — gentle nudge on ' + blockerType + ' for "' + summary +
+    '" (' + ticket.key + ')' + openBit + '. Due ' + dueFmt + '. Any ETA? Thanks!';
+
+  return {
+    blockerType,
+    blockerWhy,
+    assigneeName,
+    dueLabel,
+    dueFmt,
+    openDays,
+    nudgeText,
+    subtaskKey: st.key || null,
+    stageType: type
+  };
 }
