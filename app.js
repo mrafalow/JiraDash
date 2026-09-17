@@ -145,11 +145,17 @@ function renderTicketList(){
     const model = buildStageModel(t);
     const scoring = computeScore(t, model);
     const lane = classifySoloLane(t, model, scoring);
-    return { t, model, scoring, lane };
+    const lanes = soloLanesForTicket(t, model, scoring);
+    return { t, model, scoring, lane, lanes };
   }).sort((a,b) => b.scoring.score - a.scoring.score);
 
+  // Dual-list: Waiting tickets also land in Action; Attention stays exclusive.
   const byLane = { attention: [], action: [], waiting: [] };
-  scored.forEach(item => { (byLane[item.lane] || byLane.action).push(item); });
+  scored.forEach(item => {
+    (item.lanes || [item.lane]).forEach(laneId => {
+      (byLane[laneId] || byLane.action).push(item);
+    });
+  });
 
   const commentsWarning = STATE.data && STATE.data.commentsWarning
     ? '<div class="comments-warning" role="status">'+escapeHtml(STATE.data.commentsWarning)+'</div>'

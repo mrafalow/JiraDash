@@ -239,10 +239,13 @@ function doNotPublishEarlyFromText(text){
   return t.includes('do not publish early') || t.includes('publish on or after') || t.includes('hold until');
 }
 
-/** Solo Work lanes — exclusive: waiting > attention > action */
+/**
+ * Solo Work lanes — primary order waiting > attention > action.
+ * Waiting also dual-lists into Action (see soloLanesForTicket); Attention stays exclusive.
+ */
 const SOLO_LANES = [
   { id: 'attention', title: 'Needs Attention', hint: 'Due soon or high urgency' },
-  { id: 'action', title: 'My Action Items', hint: 'Yours — not in the fire queue' },
+  { id: 'action', title: 'My Action Items', hint: 'Yours to work — includes items waiting on others' },
   { id: 'waiting', title: 'Waiting on Others', hint: 'Blocked on someone else — draft nudge ready to send' }
 ];
 const DUE_SOON_DAYS = 2;
@@ -287,12 +290,23 @@ function isWaitingOnOthers(model, ticket){
   return isWaitingOnSubtask(model) || isWaitingOnComments(ticket);
 }
 
+/** Primary Solo lane (waiting wins over attention/action). */
 function classifySoloLane(ticket, model, scoring){
   if(isWaitingOnOthers(model, ticket)) return 'waiting';
   const dueSoon = scoring.daysUntilDue <= DUE_SOON_DAYS;
   const highScore = scoring.score >= ATTENTION_SCORE_MIN;
   if(dueSoon || highScore) return 'attention';
   return 'action';
+}
+
+/**
+ * All Solo sections a ticket should appear in.
+ * Waiting ⊆ Action (dual list). Needs Attention stays its own lane only.
+ */
+function soloLanesForTicket(ticket, model, scoring){
+  const primary = classifySoloLane(ticket, model, scoring);
+  if(primary === 'waiting') return ['waiting', 'action'];
+  return [primary];
 }
 
 function firstNameFromDisplay(name){
