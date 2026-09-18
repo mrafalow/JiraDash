@@ -247,7 +247,8 @@ function mapContentTicket(issue, currentAccountId, fieldIds){
     dueDate: datePrefix(f.duedate),
     partner: partnerValue(f, ids.partnerField),
     priority: mapPriority(f),
-    hasRa: false
+    hasRa: false,
+    hasSubtasks: false
   };
 }
 
@@ -306,15 +307,18 @@ async function fetchContentTickets(currentAccountId, fieldIds){
     const issues = await jiraSearch(jql, fields, 50);
     const keys = issues.map(i => i.key);
     let raByParent = {};
+    let subPresenceByParent = {};
     if(keys.length){
       try{
-        // Lightweight RA presence for soft check-in (no RA description needed).
+        // Subtask presence for "In motion" + RA flag for soft check-in (no RA description).
         const subsByParent = await fetchSubtasksForParents(keys, currentAccountId, false);
         Object.keys(subsByParent).forEach(pk => {
-          raByParent[pk] = (subsByParent[pk] || []).some(st => st && st.type === 'RA');
+          const list = subsByParent[pk] || [];
+          subPresenceByParent[pk] = list.length > 0;
+          raByParent[pk] = list.some(st => st && st.type === 'RA');
         });
       } catch(subErr){
-        console.warn('[jira] CONTENT RA probe failed:', subErr.message || subErr);
+        console.warn('[jira] CONTENT subtask probe failed:', subErr.message || subErr);
       }
     }
     return {
@@ -322,6 +326,7 @@ async function fetchContentTickets(currentAccountId, fieldIds){
       tickets: issues.map(i => {
         const mapped = mapContentTicket(i, currentAccountId, fieldIds);
         mapped.hasRa = !!raByParent[i.key];
+        mapped.hasSubtasks = !!subPresenceByParent[i.key];
         return mapped;
       })
     };

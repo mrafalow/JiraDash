@@ -329,6 +329,41 @@ function ticketHasRa(ticket){
   return (ticket.subtasks || []).some(st => st && st.type === 'RA');
 }
 
+/**
+ * Parent statuses still on the starting line (CONTENT / MS portfolio).
+ * Matches historical Studio Titan naming: Not Started, Open, To Do, Backlog.
+ */
+const CONTENT_START_STATUSES = ['Not Started', 'Open', 'To Do', 'Backlog'];
+
+function normalizeStatusName(status){
+  return String(status || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function isContentStartStatus(status){
+  const n = normalizeStatusName(status);
+  return CONTENT_START_STATUSES.some(s => normalizeStatusName(s) === n);
+}
+
+function ticketHasAnySubtask(ticket){
+  if(!ticket) return false;
+  if(ticket.hasSubtasks === true) return true;
+  if(ticket.hasSubtasks === false) return false;
+  return (ticket.subtasks || []).length > 0;
+}
+
+/**
+ * CONTENT portfolio "In motion": status left start line OR any subtask exists.
+ * Portfolio stays unscored — this is a presence chip only.
+ */
+function contentMotionState(ticket){
+  const reasons = [];
+  const hasSub = ticketHasAnySubtask(ticket);
+  const statusMoved = !isContentStartStatus(ticket && ticket.status);
+  if(hasSub) reasons.push('Subtask created');
+  if(statusMoved) reasons.push('Status moved');
+  return { inMotion: hasSub || statusMoved, reasons };
+}
+
 /** CONTENT still with Managed Services — not yet MS Solo (assignee=you + RA). */
 function isStillWithManagedServices(ticket, msSoloKeys){
   if(!ticket || !ticket.key || !String(ticket.key).toUpperCase().startsWith('CONTENT-')) return false;

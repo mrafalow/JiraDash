@@ -982,13 +982,20 @@ function contentDueLabel(dueDate){
   return pretty;
 }
 
+function renderContentMotionCell(ticket){
+  const motion = contentMotionState(ticket);
+  if(!motion.inMotion) return '<span class="ms-motion-quiet" aria-hidden="true">—</span>';
+  const tip = motion.reasons.join(' · ');
+  return '<span class="ms-motion-chip" title="'+escapeAttr(tip)+'">In motion</span>';
+}
+
 function renderContentListHtml(tickets){
   if(!tickets.length){
     return '<div class="content-empty">No open CONTENT tickets you own for delivery right now.</div>';
   }
   const msSoloKeys = msSoloKeySet(STATE.data);
   return '<table class="content-table"><thead><tr>' +
-    '<th>Key</th><th>Summary</th><th>Status</th><th>Assignee</th><th>Due</th><th>Partner</th>' +
+    '<th>Key</th><th>Summary</th><th>Status</th><th>Motion</th><th>Assignee</th><th>Due</th><th>Partner</th>' +
     '</tr></thead><tbody>' +
     tickets.map(t => {
       const tLink = jiraLink(t.key);
@@ -1003,6 +1010,7 @@ function renderContentListHtml(tickets){
         '<td class="primary">'+keyHtml+softHint+'</td>' +
         '<td class="content-summary">'+escapeHtml(t.summary || '')+'</td>' +
         '<td>'+escapeHtml(t.status || '—')+'</td>' +
+        '<td class="ms-motion-cell">'+renderContentMotionCell(t)+'</td>' +
         '<td>'+(t.assigneeName ? escapeHtml(t.assigneeName) : '—')+'</td>' +
         '<td>'+escapeHtml(contentDueLabel(t.dueDate))+'</td>' +
         '<td class="partner-cell">'+(t.partner ? formatPartnerCell(t.partner) : '—')+'</td>' +
