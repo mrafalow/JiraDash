@@ -19,9 +19,15 @@ function iconSvg(name){
     calendar: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>',
     warning: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3l9 16H3L12 3zM12 10v4M12 17.5h.01"/></svg>',
     users: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19c0-3.3 2.9-5.5 6.5-5.5s6.5 2.2 6.5 5.5M17 8.2a3 3 0 010 5.8M21 19c0-2.5-1.8-4.3-4-5"/></svg>',
-    translate: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg>'
+    translate: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg>',
+    queue: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="19" cy="18" r="2.2"/></svg>'
   };
   return icons[name] || '';
+}
+
+/** CONTENT portfolio — same set as Active & Closed “OWNED BY MANAGED SERVICES”. */
+function msQueueTickets(){
+  return (STATE.data && STATE.data.contentTickets) || [];
 }
 
 function escapeHtml(s){ const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
@@ -461,6 +467,8 @@ function renderBottomStrip(){
   }
 
   const translationsOpen = openTranslationsEntries().length;
+  const msQueue = msQueueTickets();
+  const msQueueCount = msQueue.length;
 
   document.getElementById('bottomStripWrap').style.display = 'block';
   document.getElementById('bottomStrip').innerHTML =
@@ -475,7 +483,14 @@ function renderBottomStrip(){
         ? 'At Risk — '+atRisk.length+' ticket'+(atRisk.length===1?'':'s')+' behind expected pace. Activate to jump to ticket'+(atRisk.length===1?'':'s')+'.'
         : 'At Risk — all on pace'
     }) +
-    strip('calendar', 'var(--band-red)', 'Due Today', dueToday.length, dueToday.length ? 'Needs a look' : 'Nothing due') +
+    strip('queue', 'var(--band-blue)', 'MS Queue', msQueueCount, msQueueCount ? 'In MS portfolio' : 'In queue', {
+      id: 'msQueueStrip',
+      clickable: msQueueCount > 0,
+      clickableAccent: 'blue',
+      ariaLabel: msQueueCount
+        ? 'MS Queue — '+msQueueCount+' ticket'+(msQueueCount===1?'':'s')+' in MS portfolio. Activate to open Active & Closed Owned by Managed Services.'
+        : 'MS Queue — in queue'
+    }) +
     strip('users', 'var(--band-blue)', 'Waiting on Others', waiting.length, waiting.length ? 'Sitting with someone else' : 'Nothing stalled', {
       id: 'waitingStrip',
       clickable: waiting.length > 0,
@@ -494,6 +509,7 @@ function renderBottomStrip(){
     });
 
   bindAtRiskStrip();
+  bindMsQueueStrip();
   bindWaitingStrip();
   bindTranslationsStrip();
 }
@@ -805,6 +821,55 @@ function bindTranslationsStrip(){
     if(e.key === 'Enter' || e.key === ' '){
       e.preventDefault();
       handleTranslationsActivate();
+    }
+  });
+}
+
+function ensureActiveRequestsView(){
+  const nav = document.querySelector('.nav-item[data-view="requests"]');
+  if(nav && !nav.classList.contains('active')) nav.click();
+  if(STATE.tableMode !== 'active'){
+    const toggle = document.getElementById('toggleActive');
+    if(toggle) toggle.click();
+  }
+}
+
+function highlightMsSection(section){
+  if(!section) return;
+  section.classList.remove('flash-highlight');
+  void section.offsetWidth;
+  section.classList.add('flash-highlight');
+  const clear = () => section.classList.remove('flash-highlight');
+  section.addEventListener('animationend', clear, { once: true });
+  setTimeout(clear, 2200);
+}
+
+function scrollToMsQueueSection(){
+  ensureActiveRequestsView();
+  const section = document.getElementById('contentDeliveryActive');
+  if(!section) return false;
+  // View/toggle may have just become visible — scroll after layout.
+  requestAnimationFrame(() => {
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    highlightMsSection(section);
+  });
+  return true;
+}
+
+function handleMsQueueActivate(){
+  if(!msQueueTickets().length) return;
+  scrollToMsQueueSection();
+}
+
+function bindMsQueueStrip(){
+  const el = document.getElementById('msQueueStrip');
+  if(!el) return;
+  if(!el.classList.contains('strip-card-clickable')) return;
+  el.addEventListener('click', handleMsQueueActivate);
+  el.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter' || e.key === ' '){
+      e.preventDefault();
+      handleMsQueueActivate();
     }
   });
 }

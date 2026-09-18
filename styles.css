@@ -292,6 +292,12 @@
   }
   .ticket-card.flash-highlight,.nudge-card.flash-highlight{animation:ticket-flash 1.7s ease;}
 
+  @keyframes ms-section-flash{
+    0%,100%{box-shadow:none;border-color:transparent;}
+    25%,70%{box-shadow:0 0 0 2px var(--band-blue),0 0 18px rgba(78,168,245,.28);border-radius:var(--radius-md);}
+  }
+  .content-footer-block.flash-highlight{animation:ms-section-flash 1.7s ease;}
+
   .at-risk-popover{
     position:fixed;z-index:80;background:var(--panel);border:1px solid var(--panel-border);
     border-radius:var(--radius-md);box-shadow:0 12px 32px rgba(0,0,0,.35);padding:10px 10px 8px;
