@@ -332,10 +332,14 @@ const COMMENT_SCAN_MAX = 25;
 /** Newest comment wins; "clear" beats stale block language in older comments. */
 function commentLineIsClear(low){
   return /(?:no\s+longer\s+blocked|unblocked|cleared|clear\s+to\s+(?:publish|release|go))/.test(low)
-    || /(?:ready\s+(?:for\s+)?(?:release|publish|go\s+live)|good\s+to\s+go)/.test(low)
+    || /(?:ready\s+(?:for\s+)?(?:release|publish|go\s+live|media)|good\s+to\s+go)/.test(low)
     || /(?:resolved|all\s+set|we(?:'re|\s+are)\s+good)/.test(low)
     || /(?:approved|merged|no\s+action\s+needed|nothing\s+blocking)/.test(low)
-    || /(?:blocker\s+)?(?:removed|lifted)/.test(low);
+    || /(?:blocker\s+)?(?:removed|lifted)/.test(low)
+    || /(?:images?|assets?|photos?)\s+(?:received|uploaded|added|in\s+jira|attached)/.test(low)
+    || /(?:received|got|have)\s+(?:the\s+)?(?:images?|assets?|photos?)/.test(low)
+    || /no\s+longer\s+waiting\s+(?:for|on)\s+(?:images?|assets?|photos?|partner)/.test(low)
+    || /(?:partner|dakota)\s+(?:sent|provided|delivered|uploaded)/.test(low);
 }
 
 function commentLineIsBlock(low){

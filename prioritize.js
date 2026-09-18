@@ -296,7 +296,7 @@ function doNotPublishEarlyFromText(text){
 const SOLO_LANES = [
   { id: 'attention', title: 'Needs Attention', hint: 'Due soon or high urgency' },
   { id: 'action', title: 'My Action Items', hint: 'Yours to work — waiting items stay here unless urgent' },
-  { id: 'waiting', title: 'Waiting on Others', hint: 'Nudge when subtask is overdue, due soon, past expected, or comments say release is blocked' }
+  { id: 'waiting', title: 'Waiting on Others', hint: 'PR: overdue or past expected only. Other stages: due soon too. Partner/images: while craft is open and comments still block.' }
 ];
 const DUE_SOON_DAYS = 2;
 /** Subtask Jira due within this many business days → Waiting nudge (incl. PR). */
@@ -334,7 +334,9 @@ function subtaskWaitNudgeReasons(model){
   if(st.dueDate){
     const daysUntilSubDue = businessDaysBetween(today, atMidnight(st.dueDate));
     if(daysUntilSubDue < 0) reasons.push('subtask_overdue');
-    else if(daysUntilSubDue <= SUBTASK_DUE_SOON_DAYS) reasons.push('subtask_due_soon');
+    else if(co.type !== 'PR' && daysUntilSubDue <= SUBTASK_DUE_SOON_DAYS){
+      reasons.push('subtask_due_soon');
+    }
   }
 
   if(co.expectedBy && today > atMidnight(co.expectedBy)){
@@ -368,22 +370,37 @@ function commentSignalsOf(ticket){
   return (ticket && ticket.commentSignals) || null;
 }
 
+/** Partner / image comment nudges only while craft stages are still open (not PR/WF and beyond). */
+function imagesCommentStillRelevant(model){
+  const co = model && model.currentOpen;
+  if(!co) return false;
+  const preMediaTypes = ['RA', 'COPY', 'MEDIA', 'ALTTEXT'];
+  if(preMediaTypes.indexOf(co.type) >= 0) return true;
+  if(co.missing && preMediaTypes.indexOf(co.type) >= 0) return true;
+  return false;
+}
+
 /** True when recent comments say we're blocked / waiting on someone else. */
-function isWaitingOnComments(ticket){
+function isWaitingOnComments(model, ticket){
   const sig = commentSignalsOf(ticket);
-  return !!(sig && sig.waitingOnOthers);
+  if(!sig || !sig.waitingOnOthers) return false;
+  if(sig.waitingOnImages || sig.waitingOnPartnerAssets){
+    return imagesCommentStillRelevant(model);
+  }
+  return true;
 }
 
 /**
  * Partner owes images/assets before Media handoff — Partner field set + comment signal.
  */
-function isWaitingOnPartnerAssets(ticket){
+function isWaitingOnPartnerAssets(ticket, model){
   const sig = commentSignalsOf(ticket);
-  return !!(ticket && ticket.partner && sig && sig.waitingOnPartnerAssets);
+  if(!(ticket && ticket.partner && sig && sig.waitingOnPartnerAssets)) return false;
+  return imagesCommentStillRelevant(model);
 }
 
 function isWaitingOnOthers(model, ticket){
-  return isNudgeWorthySubtaskWait(model) || isWaitingOnComments(ticket);
+  return isNudgeWorthySubtaskWait(model) || isWaitingOnComments(model, ticket);
 }
 
 /** True when scoring / pipeline timing says this ticket Needs Attention. */
@@ -449,7 +466,7 @@ function buildWaitingNudge(ticket, model, scoring){
   const sig = commentSignalsOf(ticket);
 
   // Partner owes assets — prefer Partner-oriented nudge over Media subtask assignee.
-  if(isWaitingOnPartnerAssets(ticket)){
+  if(isWaitingOnPartnerAssets(ticket, model)){
     const partnerName = ticket.partner;
     const first = firstNameFromDisplay(partnerName);
     let why = 'Waiting on images/assets from Partner before Media handoff';
