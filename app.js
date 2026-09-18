@@ -27,6 +27,18 @@ function iconSvg(name){
 function escapeHtml(s){ const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 function escapeAttr(s){ return escapeHtml(s).replace(/"/g, '&quot;'); }
 
+/** WDW Active + MS Solo inject (CONTENT assigned + RA) for fire lanes / strip. */
+function soloSourceTickets(){
+  const active = (STATE.data && STATE.data.activeTickets) || [];
+  const ms = (STATE.data && STATE.data.msSoloTickets) || [];
+  return active.concat(ms);
+}
+
+function msBadgeHtml(ticket){
+  if(!isManagedServicesTicket(ticket)) return '';
+  return '<span class="ms-badge" title="Managed Services — truncated pipeline">MS</span>';
+}
+
 function renderTicketCard({t, model, scoring}){
   const isExpanded = STATE.expandedKeys.has(t.key);
   const tag = buildTag(t, model, scoring);
@@ -50,9 +62,12 @@ function renderTicketCard({t, model, scoring}){
   const tLink = jiraLink(t.key);
   const summaryHtml = tLink ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+escapeHtml(t.summary)+'</a>' : escapeHtml(t.summary);
 
-  return '<div class="ticket-card'+(isExpanded?' expanded':'')+'" style="--band-color:'+BAND_COLOR[scoring.band]+'" data-key="'+t.key+'">' +
+  return '<div class="ticket-card'+(isExpanded?' expanded':'')+(isManagedServicesTicket(t)?' ms-ticket':'')+'" style="--band-color:'+BAND_COLOR[scoring.band]+'" data-key="'+t.key+'">' +
     '<div class="ticket-row" data-toggle="'+t.key+'">' +
-      '<div class="score-badge" style="background:'+BAND_BG[scoring.band]+';color:'+BAND_COLOR[scoring.band]+'">'+scoring.score+'</div>' +
+      '<div class="score-stack">' +
+        '<div class="score-badge" style="background:'+BAND_BG[scoring.band]+';color:'+BAND_COLOR[scoring.band]+'">'+scoring.score+'</div>' +
+        msBadgeHtml(t) +
+      '</div>' +
       '<div class="ticket-main">' +
         '<div class="ticket-summary">'+summaryHtml+'</div>' +
         '<div class="ticket-tag">'+tag+'</div>' +
@@ -81,10 +96,10 @@ function renderWaitingNudgeCard({t, model, scoring}){
     ? '<a class="jira-link" href="'+stLink+'" target="_blank" rel="noopener">'+escapeHtml(nudge.blockerType)+'</a>'
     : escapeHtml(nudge.blockerType);
 
-  return '<div class="nudge-card" data-key="'+escapeAttr(t.key)+'" style="--band-color:'+BAND_COLOR[scoring.band]+'">' +
+  return '<div class="nudge-card'+(isManagedServicesTicket(t)?' ms-ticket':'')+'" data-key="'+escapeAttr(t.key)+'" style="--band-color:'+BAND_COLOR[scoring.band]+'">' +
     '<div class="nudge-top">' +
       '<div class="nudge-identity">' +
-        '<div class="nudge-key">'+keyHtml+'</div>' +
+        '<div class="nudge-key">'+keyHtml+msBadgeHtml(t)+'</div>' +
         '<div class="nudge-summary">'+escapeHtml(t.summary||'')+'</div>' +
       '</div>' +
       '<div class="nudge-due" title="'+escapeAttr(nudge.dueFmt)+'">'+escapeHtml(nudge.dueLabel)+'</div>' +
@@ -139,7 +154,7 @@ function bindNudgeCopyButtons(container){
 
 function renderTicketList(){
   const container = document.getElementById('ticketList');
-  const tickets = STATE.data.activeTickets;
+  const tickets = soloSourceTickets();
   if(!tickets.length){
     container.innerHTML = '<div class="empty-state"><b>Nothing active right now</b>New requests will show up here the moment they are assigned to you.</div>';
     return;
@@ -415,7 +430,7 @@ function renderHorizonPanel(){
 }
 
 function renderBottomStrip(){
-  const tickets = STATE.data.activeTickets;
+  const tickets = soloSourceTickets();
   const scored = tickets.map(t => {
     const model = buildStageModel(t);
     return { t, model, scoring: computeScore(t, model) };
@@ -927,6 +942,7 @@ function openTranslationsEntries(){
     entries.push({ ticket: t, st });
   }
   ((STATE.data && STATE.data.activeTickets) || []).forEach(consider);
+  ((STATE.data && STATE.data.msSoloTickets) || []).forEach(consider);
   recentlyClosedOwnTickets().forEach(consider);
   return entries;
 }
@@ -935,6 +951,10 @@ function renderTranslations(){
   const wrap = document.getElementById('translationsWrap');
   const entries = [];
   ((STATE.data && STATE.data.activeTickets) || []).forEach(t => {
+    const st = (t.subtasks || []).find(s => s.type === 'TRANSLATIONS');
+    if(st) entries.push({ ticket: t, st });
+  });
+  ((STATE.data && STATE.data.msSoloTickets) || []).forEach(t => {
     const st = (t.subtasks || []).find(s => s.type === 'TRANSLATIONS');
     if(st) entries.push({ ticket: t, st });
   });
@@ -1079,8 +1099,14 @@ async function loadAll(spinning){
     STATE.data = data;
     document.getElementById('greetingText').textContent =
       data.currentUserFirstName ? 'Good morning, ' + data.currentUserFirstName : 'Good morning';
+    const soloCount = ((data.activeTickets || []).length) + ((data.msSoloTickets || []).length);
     document.getElementById('greetingSub').textContent =
-      data.activeTickets.length ? data.activeTickets.length + ' active ticket' + (data.activeTickets.length===1?'':'s') + ' on your board.' : 'Nothing active — you are all caught up.';
+      soloCount
+        ? soloCount + ' active ticket' + (soloCount===1?'':'s') + ' on your board' +
+          ((data.msSoloTickets || []).length
+            ? ' (' + data.msSoloTickets.length + ' Managed Services).'
+            : '.')
+        : 'Nothing active — you are all caught up.';
     renderHorizonPanel();
     renderTicketList();
     renderBottomStrip();

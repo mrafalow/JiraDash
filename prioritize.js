@@ -77,10 +77,21 @@ function parseChecklist(raDescription){
   return {found, ...result};
 }
 
+/** True when ticket uses Managed Services truncated Solo pipeline (no craft stages). */
+function isManagedServicesTicket(ticket){
+  return !!(ticket && (ticket.managedServices || ticket.scoringProfile === 'ms'));
+}
+
+/**
+ * Stage model for scoring / next-action.
+ * WDW (default): RA → Copy/Media/Alt (when needed) → PR → WF → Prod Val → Translations.
+ * MS Solo: RA → PR → WF → Prod Val → Translations (skips Copy/Media/Alt/SEO craft).
+ */
 function buildStageModel(ticket){
   const day0 = atMidnight(ticket.createdDate);
   const due = atMidnight(ticket.dueDate);
   const today = todayMid();
+  const isMs = isManagedServicesTicket(ticket);
 
   const subtasksByType = {};
   (ticket.subtasks || []).forEach(st => {
@@ -91,11 +102,13 @@ function buildStageModel(ticket){
 
   let needed = { COPY:false, MEDIA:false, ALTTEXT:false };
   const ra = get('RA');
-  const checklist = ra ? parseChecklist(ra.description) : {found:false};
-  if(checklist.found){
-    needed = { COPY: checklist.copy, MEDIA: checklist.media, ALTTEXT: checklist.altText };
-  } else {
-    needed = { COPY: !!get('COPY'), MEDIA: !!get('MEDIA'), ALTTEXT: !!get('ALTTEXT') };
+  if(!isMs){
+    const checklist = ra ? parseChecklist(ra.description) : {found:false};
+    if(checklist.found){
+      needed = { COPY: checklist.copy, MEDIA: checklist.media, ALTTEXT: checklist.altText };
+    } else {
+      needed = { COPY: !!get('COPY'), MEDIA: !!get('MEDIA'), ALTTEXT: !!get('ALTTEXT') };
+    }
   }
 
   const checkpoints = [];
@@ -103,17 +116,21 @@ function buildStageModel(ticket){
   checkpoints.push({ key:'RA created', expectedBy: addBusinessDays(day0, BIZ.RA_CREATE_BY), actualTrue: !!ra });
   checkpoints.push({ key:'RA closed', expectedBy: addBusinessDays(day0, BIZ.RA_CLOSE_BY), actualTrue: !!ra && ra.status === 'Closed' });
 
-  ['COPY','MEDIA','ALTTEXT'].forEach(type => {
-    if(needed[type]){
-      const st = get(type);
-      checkpoints.push({ key: STAGE_LABELS[type]+' closed', expectedBy: addBusinessDays(day0, BIZ.COND_CLOSE_BY), actualTrue: !!st && st.status === 'Closed' });
-    }
-  });
+  if(!isMs){
+    ['COPY','MEDIA','ALTTEXT'].forEach(type => {
+      if(needed[type]){
+        const st = get(type);
+        checkpoints.push({ key: STAGE_LABELS[type]+' closed', expectedBy: addBusinessDays(day0, BIZ.COND_CLOSE_BY), actualTrue: !!st && st.status === 'Closed' });
+      }
+    });
+  }
 
   let gateOpen = addBusinessDays(day0, BIZ.RA_CLOSE_BY);
-  ['COPY','MEDIA','ALTTEXT'].forEach(type => {
-    if(needed[type]) gateOpen = new Date(Math.max(gateOpen, addBusinessDays(day0, BIZ.COND_CLOSE_BY)));
-  });
+  if(!isMs){
+    ['COPY','MEDIA','ALTTEXT'].forEach(type => {
+      if(needed[type]) gateOpen = new Date(Math.max(gateOpen, addBusinessDays(day0, BIZ.COND_CLOSE_BY)));
+    });
+  }
   const pr = get('PR');
   checkpoints.push({ key:'PR closed', expectedBy: addBusinessDays(gateOpen, BIZ.PR_TURNAROUND), actualTrue: !!pr && pr.status === 'Closed' });
 
@@ -134,7 +151,9 @@ function buildStageModel(ticket){
   const feasibleByDate = addBusinessDays(gateOpen, BIZ.PR_TURNAROUND);
   const timelineTight = feasibleByDate > due;
 
-  const pipelineOrder = ['RA','COPY','MEDIA','ALTTEXT','PR','WF','PRODVAL','TRANSLATIONS'];
+  const pipelineOrder = isMs
+    ? ['RA','PR','WF','PRODVAL','TRANSLATIONS']
+    : ['RA','COPY','MEDIA','ALTTEXT','PR','WF','PRODVAL','TRANSLATIONS'];
   let currentOpen = null;
   for(const type of pipelineOrder){
     if(type !== 'RA' && type !== 'PR' && type !== 'WF' && type !== 'PRODVAL' && type !== 'TRANSLATIONS' && !needed[type]) continue;
@@ -143,7 +162,11 @@ function buildStageModel(ticket){
     if(st.status !== 'Closed'){ currentOpen = { type, subtask: st, missing:false }; break; }
   }
 
-  return { checkpoints, expectedIndex, actualIndex, stageGap, needed, currentOpen, totalStages: checkpoints.length, dueDate: due, day0, timelineTight };
+  return {
+    checkpoints, expectedIndex, actualIndex, stageGap, needed, currentOpen,
+    totalStages: checkpoints.length, dueDate: due, day0, timelineTight,
+    scoringProfile: isMs ? 'ms' : 'wdw'
+  };
 }
 
 function computeScore(ticket, model){
@@ -222,13 +245,24 @@ function normalizeFetchedData(data){
   data.recentlyClosedTickets = (data.recentlyClosedTickets || []).filter(t => {
     return !(t && t.key && String(t.key).toUpperCase().startsWith('CONTENT-'));
   });
-  // CONTENT delivery rows stay out of Solo lanes; light due-date order only.
+  // CONTENT delivery portfolio (Owned by Managed Services) — light due-date order only.
   if(!Array.isArray(data.contentTickets)) data.contentTickets = [];
   data.contentTickets = data.contentTickets.slice().sort((a, b) => {
     const da = a.dueDate ? atMidnight(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
     const db = b.dueDate ? atMidnight(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
     if(da !== db) return da - db;
     return String(a.key || '').localeCompare(String(b.key || ''));
+  });
+  // MS Solo inject: CONTENT assigned to current user with RA present — scored separately.
+  if(!Array.isArray(data.msSoloTickets)) data.msSoloTickets = [];
+  data.msSoloTickets = data.msSoloTickets.filter(t => {
+    if(!t || !t.key || !String(t.key).toUpperCase().startsWith('CONTENT-')) return false;
+    const hasRa = (t.subtasks || []).some(st => st && st.type === 'RA');
+    return !!(t.assigneeIsCurrentUser && hasRa);
+  });
+  data.msSoloTickets.forEach(t => {
+    t.managedServices = true;
+    t.scoringProfile = 'ms';
   });
   return data;
 }

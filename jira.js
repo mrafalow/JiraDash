@@ -239,10 +239,56 @@ function mapContentTicket(issue, currentAccountId, fieldIds){
     summary: f.summary || '',
     status: mapStatusName(f),
     assigneeName: assignee.assigneeName,
+    assigneeIsCurrentUser: assignee.assigneeIsCurrentUser,
     dueDate: datePrefix(f.duedate),
     partner: partnerValue(f, ids.partnerField),
     priority: mapPriority(f)
   };
+}
+
+/**
+ * CONTENT parents assigned to currentUser with an RA subtask → Solo inject candidates.
+ * Portfolio table (reporter OR assignee) stays separate via fetchContentTickets.
+ */
+async function fetchMsSoloTickets(currentAccountId, fieldIds){
+  const jql =
+    'project = CONTENT AND assignee = currentUser() AND issuetype != Sub-task AND statusCategory != Done ORDER BY duedate ASC';
+  const parentFields = [
+    'summary', 'priority', 'duedate', 'created', 'status', 'description',
+    fieldIds.publishEarlyField || DEFAULT_PUBLISH_EARLY_FIELD,
+    fieldIds.partnerField || DEFAULT_PARTNER_FIELD,
+    'assignee'
+  ];
+  try{
+    const issues = await jiraSearch(jql, parentFields, 50);
+    if(!issues.length) return { jql, tickets: [] };
+
+    const keys = issues.map(i => i.key);
+    const [subsByParent, commentsResult] = await Promise.all([
+      fetchSubtasksForParents(keys, currentAccountId, true),
+      fetchCommentsForParents(keys)
+    ]);
+    const commentSignalsByKey = (commentsResult && commentsResult.byKey) || {};
+
+    const tickets = issues.map(i => {
+      const mapped = mapActiveTicket(i, subsByParent, currentAccountId, fieldIds, commentSignalsByKey);
+      mapped.managedServices = true;
+      mapped.scoringProfile = 'ms';
+      return mapped;
+    }).filter(t => {
+      // Gate: RA must exist (MS created RA and assigned parent back).
+      return (t.subtasks || []).some(st => st && st.type === 'RA');
+    });
+
+    return {
+      jql,
+      tickets,
+      commentsWarning: (commentsResult && commentsResult.error) || null
+    };
+  } catch(err){
+    console.warn('[jira] MS Solo CONTENT fetch failed:', err.message || err);
+    return { jql, tickets: [], error: err.message || String(err) };
+  }
 }
 
 async function fetchContentTickets(currentAccountId, fieldIds){
@@ -484,14 +530,18 @@ async function fetchJiraData(){
   const activeKeys = activeIssues.map(i => i.key);
   const closedKeys = closedIssues.map(i => i.key);
 
-  const [activeSubs, closedSubs, contentResult, commentsResult] = await Promise.all([
+  const [activeSubs, closedSubs, contentResult, commentsResult, msSoloResult] = await Promise.all([
     fetchSubtasksForParents(activeKeys, currentAccountId, true),
     fetchSubtasksForParents(closedKeys, currentAccountId, false),
     fetchContentTickets(currentAccountId, fieldIds),
-    fetchCommentsForParents(activeKeys)
+    fetchCommentsForParents(activeKeys),
+    fetchMsSoloTickets(currentAccountId, fieldIds)
   ]);
 
   const commentSignalsByKey = (commentsResult && commentsResult.byKey) || {};
+  const commentsWarning = (commentsResult && commentsResult.error)
+    || (msSoloResult && msSoloResult.commentsWarning)
+    || null;
 
   return {
     currentUserFirstName,
@@ -499,6 +549,7 @@ async function fetchJiraData(){
     recentlyClosedTickets: closedIssues.map(i => mapClosedTicket(i, closedSubs, currentAccountId)),
     contentTickets: contentResult.tickets || [],
     contentJql: contentResult.jql || DEFAULT_CONTENT_JQL,
-    commentsWarning: (commentsResult && commentsResult.error) || null
+    msSoloTickets: (msSoloResult && msSoloResult.tickets) || [],
+    commentsWarning
   };
 }
