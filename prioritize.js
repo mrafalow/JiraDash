@@ -303,8 +303,11 @@ const DUE_SOON_DAYS = 2;
 const SUBTASK_DUE_SOON_DAYS = 2;
 const ATTENTION_SCORE_MIN = 50;
 
-/** Soft check-in: still with MS, no RA, this many business days after create. */
-const MS_CHECKIN_BIZ_DAYS = 5;
+/**
+ * Soft red-flag: still with MS, no progress action, this many calendar days
+ * after MS handoff (prefer WDW→CONTENT key-change; else CONTENT created).
+ */
+const MS_CHECKIN_CALENDAR_DAYS = 3;
 /** Hard MS stall: due within this many calendar days (or overdue), still with MS. */
 const MS_STALL_DUE_WITHIN_DAYS = 10;
 
@@ -352,13 +355,12 @@ function ticketHasAnySubtask(ticket){
 }
 
 /**
- * CONTENT portfolio F1-style progress (Owned by Managed Services only).
- * Highest applicable position wins:
- *   0 — no status move and no subtasks (no car)
- *   1 — parent left start statuses (Not Started / Open / To Do / Backlog)
- *   2 — any subtask exists
- *   3 — RA subtask exists
- * Portfolio stays unscored — progress track only.
+ * CONTENT portfolio progress chips (Owned by Managed Services only).
+ * Independent lights — each met stage lights green (not mutually exclusive):
+ *   Status  — parent left start statuses (Not Started / Open / To Do / Backlog)
+ *   Subtask — any subtask exists
+ *   RA      — RA subtask exists
+ * Portfolio stays unscored — chips only.
  */
 function contentMotionState(ticket){
   const statusMoved = !isContentStartStatus(ticket && ticket.status);
@@ -368,18 +370,49 @@ function contentMotionState(ticket){
   if(statusMoved) reasons.push('Status moved');
   if(hasSub) reasons.push('Subtask created');
   if(hasRa) reasons.push('RA created');
+  const litCount = (statusMoved ? 1 : 0) + (hasSub ? 1 : 0) + (hasRa ? 1 : 0);
+  // Legacy highest-wins position kept for callers that still read it.
   let position = 0;
   if(hasRa) position = 3;
   else if(hasSub) position = 2;
   else if(statusMoved) position = 1;
   return {
     position,
+    litCount,
     reasons,
     statusMoved,
     hasSub,
     hasRa,
-    inMotion: position > 0
+    stages: { status: statusMoved, subtask: hasSub, ra: hasRa },
+    inMotion: litCount > 0
   };
+}
+
+/** Any progress stage lit (≥1) counts as MS action — clears soft red flag. */
+function hasMsProgressAction(ticket){
+  const motion = contentMotionState(ticket);
+  return !!(motion && motion.inMotion);
+}
+
+/**
+ * Resolve MS handoff clock start.
+ * Prefer changelog Key change WDW-* → CONTENT-*; else CONTENT created date.
+ */
+function resolveMsHandoff(ticket){
+  if(!ticket) return null;
+  if(ticket.handoffDate){
+    return {
+      date: ticket.handoffDate,
+      source: ticket.handoffSource || 'key-change'
+    };
+  }
+  if(ticket.createdDate){
+    return {
+      date: ticket.createdDate,
+      source: 'created-fallback'
+    };
+  }
+  return null;
 }
 
 /** CONTENT still with Managed Services — not yet MS Solo (assignee=you + RA). */
@@ -390,15 +423,16 @@ function isStillWithManagedServices(ticket, msSoloKeys){
 }
 
 /**
- * Soft check-in: 5 business days after create, still with MS, still no RA.
+ * Soft red flag: 3 calendar days after MS handoff, still with MS, no progress action.
  * Light signal only — never Needs Attention.
  */
 function isMsCheckinSoft(ticket, msSoloKeys){
   if(!isStillWithManagedServices(ticket, msSoloKeys)) return false;
-  if(ticketHasRa(ticket)) return false;
-  if(!ticket.createdDate) return false;
-  const ageBiz = businessDaysBetween(atMidnight(ticket.createdDate), todayMid());
-  return ageBiz >= MS_CHECKIN_BIZ_DAYS;
+  if(hasMsProgressAction(ticket)) return false;
+  const handoff = resolveMsHandoff(ticket);
+  if(!handoff || !handoff.date) return false;
+  const ageCal = calendarDaysBetween(atMidnight(handoff.date), todayMid());
+  return ageCal >= MS_CHECKIN_CALENDAR_DAYS;
 }
 
 /**

@@ -248,8 +248,76 @@ function mapContentTicket(issue, currentAccountId, fieldIds){
     partner: partnerValue(f, ids.partnerField),
     priority: mapPriority(f),
     hasRa: false,
-    hasSubtasks: false
+    hasSubtasks: false,
+    handoffDate: null,
+    handoffSource: null
   };
+}
+
+/**
+ * Find earliest WDW-* → CONTENT-* Key change in a changelog page list.
+ * Returns { date: 'YYYY-MM-DD', source: 'key-change' } or null.
+ */
+function handoffFromChangelogHistories(histories){
+  if(!Array.isArray(histories) || !histories.length) return null;
+  let best = null;
+  for(const h of histories){
+    const items = (h && h.items) || [];
+    for(const item of items){
+      if(!item) continue;
+      const field = String(item.field || item.fieldId || '').toLowerCase();
+      if(field !== 'key' && field !== 'issuekey') continue;
+      const fromKey = String(item.fromString || item.from || '').trim().toUpperCase();
+      const toKey = String(item.toString || item.to || '').trim().toUpperCase();
+      if(!fromKey.startsWith('WDW-') || !toKey.startsWith('CONTENT-')) continue;
+      const day = datePrefix(h.created);
+      if(!day) continue;
+      if(!best || day < best.date) best = { date: day, source: 'key-change' };
+    }
+  }
+  return best;
+}
+
+/** Paginate GET /rest/api/3/issue/{key}/changelog for one CONTENT parent. */
+async function fetchIssueChangelogHistories(issueKey){
+  const histories = [];
+  let startAt = 0;
+  const maxResults = 100;
+  for(let page = 0; page < 20; page++){
+    const path = '/rest/api/3/issue/' + encodeURIComponent(issueKey) +
+      '/changelog?startAt=' + startAt + '&maxResults=' + maxResults;
+    const data = await jiraFetch(path);
+    const chunk = (data && data.values) || [];
+    histories.push.apply(histories, chunk);
+    const total = (data && typeof data.total === 'number') ? data.total : histories.length;
+    startAt += chunk.length;
+    if(!chunk.length || startAt >= total) break;
+  }
+  return histories;
+}
+
+/**
+ * Resolve MS handoff dates for CONTENT parents via changelog Key change.
+ * Fallback (caller): CONTENT created date when no WDW→CONTENT Key change found.
+ */
+async function fetchContentHandoffByKeys(keys){
+  const byKey = {};
+  if(!keys || !keys.length) return byKey;
+  const unique = Array.from(new Set(keys.filter(Boolean)));
+  const concurrency = 6;
+  for(let i = 0; i < unique.length; i += concurrency){
+    const chunk = unique.slice(i, i + concurrency);
+    await Promise.all(chunk.map(async (key) => {
+      try{
+        const histories = await fetchIssueChangelogHistories(key);
+        const hit = handoffFromChangelogHistories(histories);
+        if(hit) byKey[key] = hit;
+      } catch(err){
+        console.warn('[jira] CONTENT handoff changelog failed for', key + ':', err.message || err);
+      }
+    }));
+  }
+  return byKey;
 }
 
 /**
@@ -308,9 +376,10 @@ async function fetchContentTickets(currentAccountId, fieldIds){
     const keys = issues.map(i => i.key);
     let raByParent = {};
     let subPresenceByParent = {};
+    let handoffByKey = {};
     if(keys.length){
       try{
-        // Subtask / RA presence for Progress track + soft check-in (no RA description).
+        // Subtask / RA presence for Progress chips + soft red-flag gate (no RA description).
         const subsByParent = await fetchSubtasksForParents(keys, currentAccountId, false);
         Object.keys(subsByParent).forEach(pk => {
           const list = subsByParent[pk] || [];
@@ -320,6 +389,12 @@ async function fetchContentTickets(currentAccountId, fieldIds){
       } catch(subErr){
         console.warn('[jira] CONTENT subtask probe failed:', subErr.message || subErr);
       }
+      try{
+        // Prefer WDW-* → CONTENT-* Key change timestamp for soft check-in clock.
+        handoffByKey = await fetchContentHandoffByKeys(keys);
+      } catch(handErr){
+        console.warn('[jira] CONTENT handoff changelog fetch failed:', handErr.message || handErr);
+      }
     }
     return {
       jql,
@@ -327,6 +402,15 @@ async function fetchContentTickets(currentAccountId, fieldIds){
         const mapped = mapContentTicket(i, currentAccountId, fieldIds);
         mapped.hasRa = !!raByParent[i.key];
         mapped.hasSubtasks = !!subPresenceByParent[i.key];
+        const handoff = handoffByKey[i.key];
+        if(handoff && handoff.date){
+          mapped.handoffDate = handoff.date;
+          mapped.handoffSource = handoff.source || 'key-change';
+        } else if(mapped.createdDate){
+          // Documented fallback when Key change not found in changelog.
+          mapped.handoffDate = mapped.createdDate;
+          mapped.handoffSource = 'created-fallback';
+        }
         return mapped;
       })
     };

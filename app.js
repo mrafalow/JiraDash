@@ -541,10 +541,10 @@ function renderBottomStrip(){
   const msCheckins = collectMsCheckinTickets(STATE.data);
   const msCheckinCount = msCheckins.length;
   const msQueueSub = msCheckinCount
-    ? 'Check in · '+msCheckinCount+' waiting on RA'
+    ? 'Red flag · '+msCheckinCount+' idle after handoff'
     : (msQueueCount ? 'In MS portfolio' : 'In queue');
   const msQueueAria = msCheckinCount
-    ? 'MS Queue — '+msQueueCount+' in portfolio; '+msCheckinCount+' soft check-in'+(msCheckinCount===1?'':'s')+' (5+ business days, still no RA). Activate to open Owned by Managed Services.'
+    ? 'MS Queue — '+msQueueCount+' in portfolio; '+msCheckinCount+' soft red flag'+(msCheckinCount===1?'':'s')+' (3+ calendar days since MS handoff, no progress). Activate to open Owned by Managed Services.'
     : (msQueueCount
       ? 'MS Queue — '+msQueueCount+' ticket'+(msQueueCount===1?'':'s')+' in MS portfolio. Activate to open Active & Closed Owned by Managed Services.'
       : 'MS Queue — in queue');
@@ -566,7 +566,7 @@ function renderBottomStrip(){
         ? 'At Risk — '+atRisk.length+' ticket'+(atRisk.length===1?'':'s')+' behind expected pace. Activate to jump to ticket'+(atRisk.length===1?'':'s')+'.'
         : 'At Risk — all on pace'
     }) +
-    strip('queue', msCheckinCount ? 'var(--band-gold)' : 'var(--band-blue)', 'MS Queue', msQueueCount, msQueueSub, {
+    strip('queue', msCheckinCount ? 'var(--band-red)' : 'var(--band-blue)', 'MS Queue', msQueueCount, msQueueSub, {
       id: 'msQueueStrip',
       clickable: msQueueCount > 0,
       clickableAccent: 'blue',
@@ -982,29 +982,37 @@ function contentDueLabel(dueDate){
   return pretty;
 }
 
-const MS_PROGRESS_CAR_SVG =
-  '<svg class="ms-progress-car-icon" viewBox="0 0 20 10" width="14" height="7" aria-hidden="true" focusable="false">' +
-  '<path fill="currentColor" d="M2.2 6.2h1.1l.6-1.6h1.4L6.4 3h5.2l1.4 1.6h2.1c.7 0 1.3.5 1.3 1.2v.8H17c.4 0 .7.3.7.7v.6c0 .2-.2.4-.4.4h-.4c-.1.7-.7 1.2-1.4 1.2s-1.3-.5-1.4-1.2H7.4c-.1.7-.7 1.2-1.4 1.2S4.7 9.2 4.6 8.5H3.1c-.5 0-.9-.4-.9-.9V7c0-.4.3-.8.8-.8zm2.8 2.6c.4 0 .7-.3.7-.7s-.3-.7-.7-.7-.7.3-.7.7.3.7.7.7zm9.1 0c.4 0 .7-.3.7-.7s-.3-.7-.7-.7-.7.3-.7.7.3.7.7.7zM7.1 4.8l.7-1.1h4l.7 1.1H7.1z"/>' +
-  '</svg>';
+const MS_PROGRESS_CHIPS = [
+  { id: 'status', label: 'Status', onKey: 'statusMoved', reason: 'Status moved' },
+  { id: 'subtask', label: 'Subtask', onKey: 'hasSub', reason: 'Subtask created' },
+  { id: 'ra', label: 'RA', onKey: 'hasRa', reason: 'RA created' }
+];
 
 function renderContentMotionCell(ticket){
   const motion = contentMotionState(ticket);
-  const pos = motion.position || 0;
   const tip = motion.reasons.length ? motion.reasons.join(' · ') : 'No progress yet';
-  const aria = pos === 0
-    ? 'Progress: no status move and no subtasks'
-    : 'Progress position ' + pos + ' of 3 — ' + tip;
-  const car = pos > 0
-    ? '<span class="ms-progress-car" aria-hidden="true">'+MS_PROGRESS_CAR_SVG+'</span>'
-    : '';
-  return '<span class="ms-progress" data-pos="'+pos+'" title="'+escapeAttr(tip)+'" role="img" aria-label="'+escapeAttr(aria)+'">' +
-    '<span class="ms-progress-track" aria-hidden="true">' +
-      '<span class="ms-progress-slot" data-slot="1"></span>' +
-      '<span class="ms-progress-slot" data-slot="2"></span>' +
-      '<span class="ms-progress-slot" data-slot="3"></span>' +
-      car +
-    '</span>' +
+  const litLabels = MS_PROGRESS_CHIPS.filter(c => motion[c.onKey]).map(c => c.label);
+  const aria = litLabels.length
+    ? 'Progress: ' + litLabels.join(', ') + ' on'
+    : 'Progress: Status, Subtask, and RA off';
+  const chips = MS_PROGRESS_CHIPS.map(c => {
+    const on = !!motion[c.onKey];
+    return '<span class="ms-progress-chip'+(on?' is-on':'')+'" data-chip="'+c.id+'" title="'+escapeAttr(c.reason+(on?'':' — not yet'))+'">'+
+      escapeHtml(c.label)+
+    '</span>';
+  }).join('');
+  return '<span class="ms-progress" title="'+escapeAttr(tip)+'" role="img" aria-label="'+escapeAttr(aria)+'">' +
+    '<span class="ms-progress-chips" aria-hidden="true">'+chips+'</span>' +
   '</span>';
+}
+
+function msSoftFlagTitle(ticket){
+  const handoff = resolveMsHandoff(ticket);
+  const src = handoff && handoff.source === 'key-change'
+    ? 'WDW→CONTENT handoff'
+    : 'CONTENT created (fallback)';
+  const when = handoff && handoff.date ? handoff.date : 'unknown';
+  return 'Soft red flag: 3+ calendar days since '+src+' ('+when+'), still with MS, no progress action';
 }
 
 function renderContentListHtml(tickets){
@@ -1022,7 +1030,7 @@ function renderContentListHtml(tickets){
         : escapeHtml(t.key);
       const soft = isMsCheckinSoft(t, msSoloKeys);
       const softHint = soft
-        ? '<span class="ms-checkin-hint" title="5+ business days since create, still no RA — soft check-in">Check in</span>'
+        ? '<span class="ms-checkin-flag" title="'+escapeAttr(msSoftFlagTitle(t))+'" role="img" aria-label="Soft red flag — check in with MS">⚑</span>'
         : '';
       return '<tr'+(soft ? ' class="ms-checkin-row"' : '')+'>' +
         '<td class="primary">'+keyHtml+softHint+'</td>' +
