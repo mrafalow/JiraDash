@@ -310,7 +310,7 @@ async function fetchContentTickets(currentAccountId, fieldIds){
     let subPresenceByParent = {};
     if(keys.length){
       try{
-        // Subtask presence for "In motion" + RA flag for soft check-in (no RA description).
+        // Subtask / RA presence for Progress track + soft check-in (no RA description).
         const subsByParent = await fetchSubtasksForParents(keys, currentAccountId, false);
         Object.keys(subsByParent).forEach(pk => {
           const list = subsByParent[pk] || [];

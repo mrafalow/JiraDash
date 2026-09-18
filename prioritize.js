@@ -352,16 +352,34 @@ function ticketHasAnySubtask(ticket){
 }
 
 /**
- * CONTENT portfolio "In motion": status left start line OR any subtask exists.
- * Portfolio stays unscored — this is a presence chip only.
+ * CONTENT portfolio F1-style progress (Owned by Managed Services only).
+ * Highest applicable position wins:
+ *   0 — no status move and no subtasks (no car)
+ *   1 — parent left start statuses (Not Started / Open / To Do / Backlog)
+ *   2 — any subtask exists
+ *   3 — RA subtask exists
+ * Portfolio stays unscored — progress track only.
  */
 function contentMotionState(ticket){
-  const reasons = [];
-  const hasSub = ticketHasAnySubtask(ticket);
   const statusMoved = !isContentStartStatus(ticket && ticket.status);
-  if(hasSub) reasons.push('Subtask created');
+  const hasSub = ticketHasAnySubtask(ticket);
+  const hasRa = ticketHasRa(ticket);
+  const reasons = [];
   if(statusMoved) reasons.push('Status moved');
-  return { inMotion: hasSub || statusMoved, reasons };
+  if(hasSub) reasons.push('Subtask created');
+  if(hasRa) reasons.push('RA created');
+  let position = 0;
+  if(hasRa) position = 3;
+  else if(hasSub) position = 2;
+  else if(statusMoved) position = 1;
+  return {
+    position,
+    reasons,
+    statusMoved,
+    hasSub,
+    hasRa,
+    inMotion: position > 0
+  };
 }
 
 /** CONTENT still with Managed Services — not yet MS Solo (assignee=you + RA). */

@@ -982,11 +982,29 @@ function contentDueLabel(dueDate){
   return pretty;
 }
 
+const MS_PROGRESS_CAR_SVG =
+  '<svg class="ms-progress-car-icon" viewBox="0 0 20 10" width="14" height="7" aria-hidden="true" focusable="false">' +
+  '<path fill="currentColor" d="M2.2 6.2h1.1l.6-1.6h1.4L6.4 3h5.2l1.4 1.6h2.1c.7 0 1.3.5 1.3 1.2v.8H17c.4 0 .7.3.7.7v.6c0 .2-.2.4-.4.4h-.4c-.1.7-.7 1.2-1.4 1.2s-1.3-.5-1.4-1.2H7.4c-.1.7-.7 1.2-1.4 1.2S4.7 9.2 4.6 8.5H3.1c-.5 0-.9-.4-.9-.9V7c0-.4.3-.8.8-.8zm2.8 2.6c.4 0 .7-.3.7-.7s-.3-.7-.7-.7-.7.3-.7.7.3.7.7.7zm9.1 0c.4 0 .7-.3.7-.7s-.3-.7-.7-.7-.7.3-.7.7.3.7.7.7zM7.1 4.8l.7-1.1h4l.7 1.1H7.1z"/>' +
+  '</svg>';
+
 function renderContentMotionCell(ticket){
   const motion = contentMotionState(ticket);
-  if(!motion.inMotion) return '<span class="ms-motion-quiet" aria-hidden="true">—</span>';
-  const tip = motion.reasons.join(' · ');
-  return '<span class="ms-motion-chip" title="'+escapeAttr(tip)+'">In motion</span>';
+  const pos = motion.position || 0;
+  const tip = motion.reasons.length ? motion.reasons.join(' · ') : 'No progress yet';
+  const aria = pos === 0
+    ? 'Progress: no status move and no subtasks'
+    : 'Progress position ' + pos + ' of 3 — ' + tip;
+  const car = pos > 0
+    ? '<span class="ms-progress-car" aria-hidden="true">'+MS_PROGRESS_CAR_SVG+'</span>'
+    : '';
+  return '<span class="ms-progress" data-pos="'+pos+'" title="'+escapeAttr(tip)+'" role="img" aria-label="'+escapeAttr(aria)+'">' +
+    '<span class="ms-progress-track" aria-hidden="true">' +
+      '<span class="ms-progress-slot" data-slot="1"></span>' +
+      '<span class="ms-progress-slot" data-slot="2"></span>' +
+      '<span class="ms-progress-slot" data-slot="3"></span>' +
+      car +
+    '</span>' +
+  '</span>';
 }
 
 function renderContentListHtml(tickets){
@@ -995,7 +1013,7 @@ function renderContentListHtml(tickets){
   }
   const msSoloKeys = msSoloKeySet(STATE.data);
   return '<table class="content-table"><thead><tr>' +
-    '<th>Key</th><th>Summary</th><th>Status</th><th>Motion</th><th>Assignee</th><th>Due</th><th>Partner</th>' +
+    '<th>Key</th><th>Summary</th><th>Status</th><th>Progress</th><th>Assignee</th><th>Due</th><th>Partner</th>' +
     '</tr></thead><tbody>' +
     tickets.map(t => {
       const tLink = jiraLink(t.key);
@@ -1010,7 +1028,7 @@ function renderContentListHtml(tickets){
         '<td class="primary">'+keyHtml+softHint+'</td>' +
         '<td class="content-summary">'+escapeHtml(t.summary || '')+'</td>' +
         '<td>'+escapeHtml(t.status || '—')+'</td>' +
-        '<td class="ms-motion-cell">'+renderContentMotionCell(t)+'</td>' +
+        '<td class="ms-progress-cell">'+renderContentMotionCell(t)+'</td>' +
         '<td>'+(t.assigneeName ? escapeHtml(t.assigneeName) : '—')+'</td>' +
         '<td>'+escapeHtml(contentDueLabel(t.dueDate))+'</td>' +
         '<td class="partner-cell">'+(t.partner ? formatPartnerCell(t.partner) : '—')+'</td>' +

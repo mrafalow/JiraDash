@@ -181,14 +181,46 @@
     border:1px solid rgba(212,168,75,.28);white-space:nowrap;
   }
   table.content-table tr.ms-checkin-row td{background:rgba(212,168,75,.04);}
-  .ms-motion-cell{white-space:nowrap;vertical-align:middle;}
-  .ms-motion-quiet{color:var(--text-tertiary);font-weight:500;}
-  .ms-motion-chip{
-    display:inline-block;font-size:10px;font-weight:650;letter-spacing:.02em;line-height:1;
-    padding:4px 8px;border-radius:5px;
-    background:rgba(142,197,255,.08);color:#9ec5e8;
-    border:1px solid rgba(142,197,255,.22);white-space:nowrap;
+  .ms-progress-cell{white-space:nowrap;vertical-align:middle;min-width:76px;}
+  .ms-progress{display:inline-flex;align-items:center;vertical-align:middle;}
+  .ms-progress-track{
+    position:relative;display:grid;grid-template-columns:repeat(3,1fr);align-items:center;
+    width:68px;height:16px;padding:0 2px;
   }
+  .ms-progress-slot{
+    position:relative;height:2px;margin:0 2px;border-radius:1px;
+    background:rgba(255,255,255,.08);
+  }
+  .ms-progress-slot::after{
+    content:"";position:absolute;left:50%;top:50%;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;
+    border-radius:50%;background:rgba(255,255,255,.14);box-shadow:0 0 0 1px rgba(255,255,255,.04);
+  }
+  .ms-progress[data-pos="1"] .ms-progress-slot[data-slot="1"],
+  .ms-progress[data-pos="2"] .ms-progress-slot[data-slot="1"],
+  .ms-progress[data-pos="2"] .ms-progress-slot[data-slot="2"],
+  .ms-progress[data-pos="3"] .ms-progress-slot[data-slot="1"],
+  .ms-progress[data-pos="3"] .ms-progress-slot[data-slot="2"],
+  .ms-progress[data-pos="3"] .ms-progress-slot[data-slot="3"]{
+    background:rgba(158,197,232,.28);
+  }
+  .ms-progress[data-pos="1"] .ms-progress-slot[data-slot="1"]::after,
+  .ms-progress[data-pos="2"] .ms-progress-slot[data-slot="1"]::after,
+  .ms-progress[data-pos="2"] .ms-progress-slot[data-slot="2"]::after,
+  .ms-progress[data-pos="3"] .ms-progress-slot[data-slot="1"]::after,
+  .ms-progress[data-pos="3"] .ms-progress-slot[data-slot="2"]::after,
+  .ms-progress[data-pos="3"] .ms-progress-slot[data-slot="3"]::after{
+    background:rgba(158,197,232,.55);
+  }
+  .ms-progress-car{
+    position:absolute;top:50%;left:0;width:14px;height:7px;margin-top:-3.5px;
+    color:#9ec5e8;opacity:.9;pointer-events:none;
+    transition:transform .25s ease;
+    filter:drop-shadow(0 0 2px rgba(158,197,232,.25));
+  }
+  .ms-progress-car-icon{display:block;width:14px;height:7px;}
+  .ms-progress[data-pos="1"] .ms-progress-car{transform:translateX(4px);}
+  .ms-progress[data-pos="2"] .ms-progress-car{transform:translateX(27px);}
+  .ms-progress[data-pos="3"] .ms-progress-car{transform:translateX(50px);}
   .content-empty{
     font-size:13px;color:var(--text-tertiary);padding:16px;
     background:var(--panel);border:1px solid var(--panel-border);border-radius:var(--radius-md);
