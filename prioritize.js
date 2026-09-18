@@ -154,12 +154,28 @@ function buildStageModel(ticket){
   const pipelineOrder = isMs
     ? ['RA','PR','WF','PRODVAL','TRANSLATIONS']
     : ['RA','COPY','MEDIA','ALTTEXT','PR','WF','PRODVAL','TRANSLATIONS'];
+  function checkpointKeyForStageType(type){
+    if(type === 'RA') return 'RA closed';
+    if(type === 'PRODVAL') return 'PROD Val closed';
+    return (STAGE_LABELS[type] || type) + ' closed';
+  }
+
   let currentOpen = null;
   for(const type of pipelineOrder){
     if(type !== 'RA' && type !== 'PR' && type !== 'WF' && type !== 'PRODVAL' && type !== 'TRANSLATIONS' && !needed[type]) continue;
     const st = get(type);
     if(!st){ currentOpen = { type, missing:true }; break; }
-    if(st.status !== 'Closed'){ currentOpen = { type, subtask: st, missing:false }; break; }
+    if(st.status !== 'Closed'){
+      const cpKey = checkpointKeyForStageType(type);
+      const cp = checkpoints.find(c => c.key === cpKey);
+      currentOpen = {
+        type,
+        subtask: st,
+        missing: false,
+        expectedBy: cp ? cp.expectedBy : null
+      };
+      break;
+    }
   }
 
   return {
@@ -280,9 +296,11 @@ function doNotPublishEarlyFromText(text){
 const SOLO_LANES = [
   { id: 'attention', title: 'Needs Attention', hint: 'Due soon or high urgency' },
   { id: 'action', title: 'My Action Items', hint: 'Yours to work — waiting items stay here unless urgent' },
-  { id: 'waiting', title: 'Waiting on Others', hint: 'Blocked on someone else — draft nudge ready to send' }
+  { id: 'waiting', title: 'Waiting on Others', hint: 'Nudge when subtask is overdue, due soon, past expected, or comments say release is blocked' }
 ];
 const DUE_SOON_DAYS = 2;
+/** Subtask Jira due within this many business days → Waiting nudge (incl. PR). */
+const SUBTASK_DUE_SOON_DAYS = 2;
 const ATTENTION_SCORE_MIN = 50;
 
 /** Blocker “why” labels for Waiting nudge cards (standup rule 5). */
@@ -297,9 +315,53 @@ const BLOCKER_WHY = {
   TRANSLATIONS: 'Translations pending'
 };
 
-function isWaitingOnSubtask(model){
+function isOpenStageWithOtherAssignee(model){
   return !!(model.currentOpen && !model.currentOpen.missing &&
     model.currentOpen.subtask && model.currentOpen.subtask.assigneeIsCurrentUser === false);
+}
+
+/**
+ * Subtask waiting counts for nudges only when overdue, due soon, or past Config expected-by.
+ * PR never nudges on assignee alone (Ben / queued PR).
+ */
+function subtaskWaitNudgeReasons(model){
+  if(!isOpenStageWithOtherAssignee(model)) return null;
+  const co = model.currentOpen;
+  const st = co.subtask;
+  const today = todayMid();
+  const reasons = [];
+
+  if(st.dueDate){
+    const daysUntilSubDue = businessDaysBetween(today, atMidnight(st.dueDate));
+    if(daysUntilSubDue < 0) reasons.push('subtask_overdue');
+    else if(daysUntilSubDue <= SUBTASK_DUE_SOON_DAYS) reasons.push('subtask_due_soon');
+  }
+
+  if(co.expectedBy && today > atMidnight(co.expectedBy)){
+    reasons.push('past_expected');
+  }
+
+  if(!reasons.length) return null;
+  return { type: co.type, reasons };
+}
+
+function isNudgeWorthySubtaskWait(model){
+  return subtaskWaitNudgeReasons(model) != null;
+}
+
+function formatSubtaskWaitWhy(model, reasons){
+  const co = model.currentOpen;
+  const st = co && co.subtask;
+  const parts = [];
+  if(reasons.indexOf('subtask_overdue') >= 0 && st && st.dueDate){
+    parts.push('subtask due ' + fmtDate(st.dueDate) + ' (overdue)');
+  } else if(reasons.indexOf('subtask_due_soon') >= 0 && st && st.dueDate){
+    parts.push('subtask due ' + fmtDate(st.dueDate) + ' (soon)');
+  }
+  if(reasons.indexOf('past_expected') >= 0 && co.expectedBy){
+    parts.push('past expected ' + fmtDate(co.expectedBy) + ' (Config)');
+  }
+  return parts.join(' · ') || 'Pending with someone else';
 }
 
 function commentSignalsOf(ticket){
@@ -321,7 +383,7 @@ function isWaitingOnPartnerAssets(ticket){
 }
 
 function isWaitingOnOthers(model, ticket){
-  return isWaitingOnSubtask(model) || isWaitingOnComments(ticket);
+  return isNudgeWorthySubtaskWait(model) || isWaitingOnComments(ticket);
 }
 
 /** True when scoring / pipeline timing says this ticket Needs Attention. */
@@ -409,13 +471,15 @@ function buildWaitingNudge(ticket, model, scoring){
     };
   }
 
-  // Subtask-based waiting (existing path) — keep when open stage sits with someone else.
-  if(isWaitingOnSubtask(model)){
+  const subtaskWait = subtaskWaitNudgeReasons(model);
+  if(subtaskWait){
     const co = model.currentOpen;
     const st = co.subtask;
-    const type = co.type;
+    const type = subtaskWait.type;
+    const reasons = subtaskWait.reasons;
     const blockerType = STAGE_LABELS[type] || type || 'Blocker';
     let blockerWhy = BLOCKER_WHY[type] || (blockerType + ' pending with someone else');
+    blockerWhy += ' · ' + formatSubtaskWaitWhy(model, reasons);
     if(sig && sig.waitingOnImages) blockerWhy += ' · comments mention waiting on images/assets';
     else if(sig && sig.dateAdjusted) blockerWhy += ' · comments mention due date adjusted';
     const assigneeName = st.assigneeName || 'Unassigned';
@@ -423,14 +487,20 @@ function buildWaitingNudge(ticket, model, scoring){
     const openDays = st.createdDate != null ? businessDaysBetween(atMidnight(st.createdDate), today) : null;
     const first = firstNameFromDisplay(st.assigneeName);
     const openBit = openDays != null ? ' (open ' + openDays + 'd)' : '';
+    const subDueFmt = st.dueDate ? fmtDate(st.dueDate) : dueFmt;
     let nudgeText = 'Hi ' + first + ' — gentle nudge on ' + blockerType + ' for "' + summary +
-      '" (' + ticket.key + ')' + openBit + '. Due ' + dueFmt + '. Any ETA? Thanks!';
+      '" (' + ticket.key + ')' + openBit + '. Subtask due ' + subDueFmt + '; parent due ' + dueFmt + '. Any ETA? Thanks!';
+    if(reasons.indexOf('past_expected') >= 0 && co.expectedBy){
+      nudgeText = 'Hi ' + first + ' — gentle nudge on ' + blockerType + ' for "' + summary +
+        '" (' + ticket.key + ')' + openBit + '. Expected by ' + fmtDate(co.expectedBy) + ' (Config). Subtask due ' +
+        subDueFmt + '. Any ETA? Thanks!';
+    }
     if(sig && sig.waitingOnImages){
       nudgeText = 'Hi ' + first + ' — gentle nudge on ' + blockerType + ' for "' + summary +
-        '" (' + ticket.key + ')' + openBit + '. Still waiting on images/assets. Due ' + dueFmt + '. Any ETA? Thanks!';
+        '" (' + ticket.key + ')' + openBit + '. Still waiting on images/assets. Subtask due ' + subDueFmt + '. Any ETA? Thanks!';
     } else if(sig && sig.dateAdjusted){
       nudgeText = 'Hi ' + first + ' — gentle nudge on ' + blockerType + ' for "' + summary +
-        '" (' + ticket.key + ')' + openBit + '. Due date was adjusted — now ' + dueFmt + '. Any ETA? Thanks!';
+        '" (' + ticket.key + ')' + openBit + '. Due date was adjusted — parent due ' + dueFmt + '. Any ETA? Thanks!';
     }
     return {
       blockerType,

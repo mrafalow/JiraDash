@@ -170,6 +170,7 @@ function mapSubtask(issue, currentAccountId, includeDescription){
     assigneeName: assignee.assigneeName,
     assigneeIsCurrentUser: assignee.assigneeIsCurrentUser,
     createdDate: datePrefix(f.created),
+    dueDate: datePrefix(f.duedate),
     closedDate: datePrefix(f.resolutiondate)
   };
   if(includeDescription || mapped.type === 'RA'){
@@ -318,7 +319,7 @@ async function fetchSubtasksForParents(keys, currentAccountId, includeRaDescript
   const all = [];
   for(const chunk of chunks){
     const jql = 'parent in (' + chunk.join(',') + ')';
-    const fields = ['summary','status','assignee','created','resolutiondate','description','parent'];
+    const fields = ['summary','status','assignee','created','duedate','resolutiondate','description','parent'];
     const issues = await jiraSearch(jql, fields, 200);
     all.push(...issues);
   }
@@ -328,63 +329,75 @@ async function fetchSubtasksForParents(keys, currentAccountId, includeRaDescript
 /** How many newest comments to scan per parent for Waiting / Partner signals. */
 const COMMENT_SCAN_MAX = 25;
 
+/** Newest comment wins; "clear" beats stale block language in older comments. */
+function commentLineIsClear(low){
+  return /(?:no\s+longer\s+blocked|unblocked|cleared|clear\s+to\s+(?:publish|release|go))/.test(low)
+    || /(?:ready\s+(?:for\s+)?(?:release|publish|go\s+live)|good\s+to\s+go)/.test(low)
+    || /(?:resolved|all\s+set|we(?:'re|\s+are)\s+good)/.test(low)
+    || /(?:approved|merged|no\s+action\s+needed|nothing\s+blocking)/.test(low)
+    || /(?:blocker\s+)?(?:removed|lifted)/.test(low);
+}
+
+function commentLineIsBlock(low){
+  const waitingOnImages = /waiting\s+(?:for|on)\s+(?:the\s+)?(?:images?|assets?|photos?)/.test(low)
+    || /(?:need(?:s|ed)?|awaiting)\s+(?:images?|assets?|photos?)\s+(?:from|before)/.test(low)
+    || /(?:images?|assets?|photos?)\s+from\s+(?:partner|dakota)/.test(low)
+    || /from\s+partner\s+(?:before|for)\b/.test(low)
+    || /(?:have|get|need)\s+(?:photos?|images?|assets?)\s+sent/.test(low)
+    || /once\s+(?:the\s+)?(?:images?|photos?|assets?)\s+(?:are\s+)?added/.test(low)
+    || /(?:note|ask(?:ing)?|asked)\s+to\s+partner.*(?:photos?|images?|assets?)/.test(low)
+    || /partner.*(?:photos?|images?|assets?).*(?:sent|add|deliver)/.test(low)
+    || /(?:photos?|images?|assets?).*(?:from|to)\s+partner/.test(low)
+    || (/sent\s+note\s+to\s+partner/.test(low) && /(?:photos?|images?|assets?)/.test(low));
+
+  const dateAdjusted = /(?:due|date)\s+(?:was\s+)?(?:adjusted|pushed|moved|changed|shifted)/.test(low)
+    || /(?:adjusted|pushed|moved|changed|shifted)\s+(?:the\s+)?(?:due\s+)?date/.test(low)
+    || /date\s+(?:adjustment|change|push)/.test(low);
+
+  const releaseBlock = /blocked\s+(?:on|by)\b/.test(low)
+    || /holding\s+(?:for|on)\s+(?:release|publish)/.test(low)
+    || /(?:can(?:'|no)?t|cannot)\s+publish/.test(low)
+    || /waiting\s+(?:for|on)\s+.*(?:before|until)\s+(?:release|publish)/.test(low)
+    || /(?:release|publish)\s+(?:blocked|on\s+hold)/.test(low);
+
+  const generalWait = /waiting\s+(?:for|on)\b/.test(low)
+    || /holding\s+(?:for|on)\b/.test(low)
+    || /still\s+need(?:s|ed)?\b/.test(low);
+
+  if(!waitingOnImages && !dateAdjusted && !releaseBlock && !generalWait) return null;
+  return { waitingOnImages, dateAdjusted, releaseBlock };
+}
+
 /**
- * Heuristics over recent comment text (case-insensitive) for Solo Waiting lane.
- * v1: waiting for/on images|assets|photos; due/date adjusted|pushed|moved; general waiting-on.
- * Also catches Partner photo/image delivery phrasing (Turf Club-style notes).
+ * Heuristics over recent comments (newest first) for Solo Waiting lane.
  */
 function analyzeCommentSignals(commentTexts){
-  const joined = (commentTexts || []).filter(Boolean).join('\n').toLowerCase();
-  if(!joined.trim()){
-    return {
-      waitingOnOthers: false,
-      waitingOnImages: false,
-      dateAdjusted: false,
-      waitingOnPartnerAssets: false,
-      matchSnippet: null
-    };
-  }
-
-  const waitingOnImages = /waiting\s+(?:for|on)\s+(?:the\s+)?(?:images?|assets?|photos?)/.test(joined)
-    || /(?:need(?:s|ed)?|awaiting)\s+(?:images?|assets?|photos?)\s+(?:from|before)/.test(joined)
-    || /(?:images?|assets?|photos?)\s+from\s+(?:partner|dakota)/.test(joined)
-    || /from\s+partner\s+(?:before|for)\b/.test(joined)
-    // Turf Club-style: "have photos sent… once the images are added"
-    || /(?:have|get|need)\s+(?:photos?|images?|assets?)\s+sent/.test(joined)
-    || /once\s+(?:the\s+)?(?:images?|photos?|assets?)\s+(?:are\s+)?added/.test(joined)
-    || /(?:note|ask(?:ing)?|asked)\s+to\s+partner.*(?:photos?|images?|assets?)/.test(joined)
-    || /partner.*(?:photos?|images?|assets?).*(?:sent|add|deliver)/.test(joined)
-    || /(?:photos?|images?|assets?).*(?:from|to)\s+partner/.test(joined)
-    || /sent\s+note\s+to\s+partner/.test(joined) && /(?:photos?|images?|assets?)/.test(joined);
-
-  const dateAdjusted = /(?:due|date)\s+(?:was\s+)?(?:adjusted|pushed|moved|changed|shifted)/.test(joined)
-    || /(?:adjusted|pushed|moved|changed|shifted)\s+(?:the\s+)?(?:due\s+)?date/.test(joined)
-    || /date\s+(?:adjustment|change|push)/.test(joined);
-
-  const waitingOn = /waiting\s+(?:for|on)\b/.test(joined)
-    || /blocked\s+(?:on|by)\b/.test(joined)
-    || /holding\s+(?:for|on)\b/.test(joined)
-    || /still\s+need(?:s|ed)?\b/.test(joined);
-
-  const waitingOnOthers = waitingOnImages || dateAdjusted || waitingOn;
-  const waitingOnPartnerAssets = waitingOnImages;
-
-  let matchSnippet = null;
-  if(waitingOnOthers){
-    const source = (commentTexts || []).find(t => {
-      const low = String(t || '').toLowerCase();
-      return /waiting\s+(?:for|on)|blocked\s+(?:on|by)|(?:due|date).*(?:adjusted|pushed|moved)|(?:images?|assets?|photos?)|partner/.test(low);
-    }) || commentTexts[0];
-    matchSnippet = String(source || '').replace(/\s+/g, ' ').trim().slice(0, 140) || null;
-  }
-
-  return {
-    waitingOnOthers,
-    waitingOnImages,
-    dateAdjusted,
-    waitingOnPartnerAssets,
-    matchSnippet
+  const empty = {
+    waitingOnOthers: false,
+    waitingOnImages: false,
+    dateAdjusted: false,
+    waitingOnPartnerAssets: false,
+    matchSnippet: null
   };
+  const texts = (commentTexts || []).filter(Boolean);
+  if(!texts.length) return empty;
+
+  for(let i = 0; i < texts.length; i++){
+    const low = String(texts[i]).toLowerCase();
+    if(commentLineIsClear(low)) return empty;
+    const block = commentLineIsBlock(low);
+    if(block){
+      const snippet = String(texts[i]).replace(/\s+/g, ' ').trim().slice(0, 140) || null;
+      return {
+        waitingOnOthers: true,
+        waitingOnImages: block.waitingOnImages,
+        dateAdjusted: block.dateAdjusted,
+        waitingOnPartnerAssets: block.waitingOnImages,
+        matchSnippet: snippet
+      };
+    }
+  }
+  return empty;
 }
 
 function commentBodyToText(body){
