@@ -303,6 +303,97 @@ const DUE_SOON_DAYS = 2;
 const SUBTASK_DUE_SOON_DAYS = 2;
 const ATTENTION_SCORE_MIN = 50;
 
+/** Soft check-in: still with MS, no RA, this many business days after create. */
+const MS_CHECKIN_BIZ_DAYS = 5;
+/** Hard MS stall: due within this many calendar days (or overdue), still with MS. */
+const MS_STALL_DUE_WITHIN_DAYS = 10;
+
+/** Calendar (not business) day delta from start → end at midnight. */
+function calendarDaysBetween(start, end){
+  const a = atMidnight(start), b = atMidnight(end);
+  return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+
+function msSoloKeySet(data){
+  const set = new Set();
+  ((data && data.msSoloTickets) || []).forEach(t => {
+    if(t && t.key) set.add(t.key);
+  });
+  return set;
+}
+
+function ticketHasRa(ticket){
+  if(!ticket) return false;
+  if(ticket.hasRa === true) return true;
+  if(ticket.hasRa === false) return false;
+  return (ticket.subtasks || []).some(st => st && st.type === 'RA');
+}
+
+/** CONTENT still with Managed Services — not yet MS Solo (assignee=you + RA). */
+function isStillWithManagedServices(ticket, msSoloKeys){
+  if(!ticket || !ticket.key || !String(ticket.key).toUpperCase().startsWith('CONTENT-')) return false;
+  if(msSoloKeys && msSoloKeys.has(ticket.key)) return false;
+  return true;
+}
+
+/**
+ * Soft check-in: 5 business days after create, still with MS, still no RA.
+ * Light signal only — never Needs Attention.
+ */
+function isMsCheckinSoft(ticket, msSoloKeys){
+  if(!isStillWithManagedServices(ticket, msSoloKeys)) return false;
+  if(ticketHasRa(ticket)) return false;
+  if(!ticket.createdDate) return false;
+  const ageBiz = businessDaysBetween(atMidnight(ticket.createdDate), todayMid());
+  return ageBiz >= MS_CHECKIN_BIZ_DAYS;
+}
+
+/**
+ * Hard MS stall: due exists and ≤10 calendar days away (or overdue), still with MS.
+ * Inject into Needs Attention — no Solo pipeline scoring.
+ */
+function isMsStallHard(ticket, msSoloKeys){
+  if(!isStillWithManagedServices(ticket, msSoloKeys)) return false;
+  if(!ticket.dueDate) return false;
+  const daysUntilDue = calendarDaysBetween(todayMid(), atMidnight(ticket.dueDate));
+  return daysUntilDue <= MS_STALL_DUE_WITHIN_DAYS;
+}
+
+function msStallReason(ticket){
+  if(!ticket || !ticket.dueDate) return 'MS stall';
+  const days = calendarDaysBetween(todayMid(), atMidnight(ticket.dueDate));
+  if(days < 0) return 'Past due — still with MS';
+  if(days <= MS_STALL_DUE_WITHIN_DAYS) return 'Due soon — still with MS';
+  return 'MS stall';
+}
+
+function msStallCalendarDueLabel(ticket){
+  if(!ticket || !ticket.dueDate) return '—';
+  const days = calendarDaysBetween(todayMid(), atMidnight(ticket.dueDate));
+  if(days === 0) return 'Today';
+  if(days < 0) return Math.abs(days) + 'd overdue';
+  return 'In ' + days + 'd';
+}
+
+function collectMsCheckinTickets(data){
+  const msSoloKeys = msSoloKeySet(data);
+  return ((data && data.contentTickets) || []).filter(t => isMsCheckinSoft(t, msSoloKeys));
+}
+
+/** Hard stalls from CONTENT portfolio minus MS Solo — sorted by due date ascending. */
+function collectMsStallTickets(data){
+  const msSoloKeys = msSoloKeySet(data);
+  return ((data && data.contentTickets) || [])
+    .filter(t => isMsStallHard(t, msSoloKeys))
+    .slice()
+    .sort((a, b) => {
+      const da = a.dueDate ? atMidnight(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
+      const db = b.dueDate ? atMidnight(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
+      if(da !== db) return da - db;
+      return String(a.key || '').localeCompare(String(b.key || ''));
+    });
+}
+
 /** Blocker “why” labels for Waiting nudge cards (standup rule 5). */
 const BLOCKER_WHY = {
   RA: 'RA approval sitting with someone else',

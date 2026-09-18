@@ -243,9 +243,11 @@ function mapContentTicket(issue, currentAccountId, fieldIds){
     status: mapStatusName(f),
     assigneeName: assignee.assigneeName,
     assigneeIsCurrentUser: assignee.assigneeIsCurrentUser,
+    createdDate: datePrefix(f.created),
     dueDate: datePrefix(f.duedate),
     partner: partnerValue(f, ids.partnerField),
-    priority: mapPriority(f)
+    priority: mapPriority(f),
+    hasRa: false
   };
 }
 
@@ -297,14 +299,31 @@ async function fetchMsSoloTickets(currentAccountId, fieldIds){
 async function fetchContentTickets(currentAccountId, fieldIds){
   const jql = (fieldIds && fieldIds.contentJql) || DEFAULT_CONTENT_JQL;
   const fields = [
-    'summary', 'status', 'assignee', 'duedate', 'priority',
+    'summary', 'status', 'assignee', 'duedate', 'created', 'priority',
     fieldIds.partnerField || DEFAULT_PARTNER_FIELD
   ];
   try{
     const issues = await jiraSearch(jql, fields, 50);
+    const keys = issues.map(i => i.key);
+    let raByParent = {};
+    if(keys.length){
+      try{
+        // Lightweight RA presence for soft check-in (no RA description needed).
+        const subsByParent = await fetchSubtasksForParents(keys, currentAccountId, false);
+        Object.keys(subsByParent).forEach(pk => {
+          raByParent[pk] = (subsByParent[pk] || []).some(st => st && st.type === 'RA');
+        });
+      } catch(subErr){
+        console.warn('[jira] CONTENT RA probe failed:', subErr.message || subErr);
+      }
+    }
     return {
       jql,
-      tickets: issues.map(i => mapContentTicket(i, currentAccountId, fieldIds))
+      tickets: issues.map(i => {
+        const mapped = mapContentTicket(i, currentAccountId, fieldIds);
+        mapped.hasRa = !!raByParent[i.key];
+        return mapped;
+      })
     };
   } catch(err){
     // CONTENT project may be unavailable for some tokens — keep WDW board working.

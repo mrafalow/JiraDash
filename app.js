@@ -45,6 +45,44 @@ function msBadgeHtml(ticket){
   return '<span class="ms-badge" title="Managed Services — truncated pipeline">MS</span>';
 }
 
+/** Hard MS stall card — no pipeline score; click opens Jira. */
+function renderMsStallCard(t){
+  const reason = msStallReason(t);
+  const dueLabel = msStallCalendarDueLabel(t);
+  const priorityShort = (t.priority || '').replace(/^\d+ - /,'');
+  const tLink = jiraLink(t.key);
+  const summaryHtml = tLink
+    ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+escapeHtml(t.summary || t.key)+'</a>'
+    : escapeHtml(t.summary || t.key);
+  const openHref = tLink || '';
+  return '<div class="ticket-card ms-ticket ms-stall-card" style="--band-color:var(--band-orange)" data-key="'+escapeAttr(t.key)+'" data-ms-stall="1">' +
+    '<div class="ticket-row"'+(openHref ? ' data-ms-stall-open="'+escapeAttr(openHref)+'"' : '')+'>' +
+      '<div class="score-stack">' +
+        '<div class="score-badge ms-stall-mark" style="background:var(--band-orange-bg);color:var(--band-orange)" title="MS stall — not scored">—</div>' +
+        '<span class="ms-badge" title="Still with Managed Services">MS</span>' +
+      '</div>' +
+      '<div class="ticket-main">' +
+        '<div class="ticket-summary">'+summaryHtml+'</div>' +
+        '<div class="ticket-tag">'+escapeHtml(reason)+'</div>' +
+      '</div>' +
+      '<div class="ticket-meta">' +
+        '<div class="meta-col">Due<div class="val">'+escapeHtml(dueLabel)+'</div></div>' +
+        (priorityShort ? '<div class="priority-chip" style="background:var(--band-orange-bg);color:var(--band-orange)">'+escapeHtml(priorityShort)+'</div>' : '') +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function bindMsStallOpen(container){
+  container.querySelectorAll('[data-ms-stall-open]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if(e.target.closest('a')) return;
+      const href = el.getAttribute('data-ms-stall-open');
+      if(href) window.open(href, '_blank', 'noopener');
+    });
+  });
+}
+
 function renderTicketCard({t, model, scoring}){
   const isExpanded = STATE.expandedKeys.has(t.key);
   const tag = buildTag(t, model, scoring);
@@ -161,7 +199,8 @@ function bindNudgeCopyButtons(container){
 function renderTicketList(){
   const container = document.getElementById('ticketList');
   const tickets = soloSourceTickets();
-  if(!tickets.length){
+  const msStalls = collectMsStallTickets(STATE.data);
+  if(!tickets.length && !msStalls.length){
     container.innerHTML = '<div class="empty-state"><b>Nothing active right now</b>New requests will show up here the moment they are assigned to you.</div>';
     return;
   }
@@ -181,12 +220,18 @@ function renderTicketList(){
     });
   });
 
+  // MS stalls (still with MS, due ≤10 calendar days) → Needs Attention; sort by due; no pipeline score.
+  const stallKeys = new Set(msStalls.map(t => t.key));
+  byLane.attention = byLane.attention.filter(item => !stallKeys.has(item.t.key));
+  const stallItems = msStalls.map(t => ({ t, msStall: true }));
+
   const commentsWarning = STATE.data && STATE.data.commentsWarning
     ? '<div class="comments-warning" role="status">'+escapeHtml(STATE.data.commentsWarning)+'</div>'
     : '';
 
   container.innerHTML = commentsWarning + SOLO_LANES.map(lane => {
-    const items = byLane[lane.id] || [];
+    const scoredItems = byLane[lane.id] || [];
+    const items = lane.id === 'attention' ? stallItems.concat(scoredItems) : scoredItems;
     let cards;
     if(!items.length){
       cards = lane.id === 'waiting'
@@ -194,6 +239,8 @@ function renderTicketList(){
         : '<div class="lane-empty">Nothing in this lane</div>';
     } else if(lane.id === 'waiting'){
       cards = items.map(renderWaitingNudgeCard).join('');
+    } else if(lane.id === 'attention'){
+      cards = items.map(item => item.msStall ? renderMsStallCard(item.t) : renderTicketCard(item)).join('');
     } else {
       cards = items.map(renderTicketCard).join('');
     }
@@ -217,6 +264,7 @@ function renderTicketList(){
     });
   });
   bindNudgeCopyButtons(container);
+  bindMsStallOpen(container);
 }
 
 function dueDateKey(d){
@@ -490,6 +538,16 @@ function renderBottomStrip(){
   const translationsOpen = openTranslationsEntries().length;
   const msQueue = msQueueTickets();
   const msQueueCount = msQueue.length;
+  const msCheckins = collectMsCheckinTickets(STATE.data);
+  const msCheckinCount = msCheckins.length;
+  const msQueueSub = msCheckinCount
+    ? 'Check in · '+msCheckinCount+' waiting on RA'
+    : (msQueueCount ? 'In MS portfolio' : 'In queue');
+  const msQueueAria = msCheckinCount
+    ? 'MS Queue — '+msQueueCount+' in portfolio; '+msCheckinCount+' soft check-in'+(msCheckinCount===1?'':'s')+' (5+ business days, still no RA). Activate to open Owned by Managed Services.'
+    : (msQueueCount
+      ? 'MS Queue — '+msQueueCount+' ticket'+(msQueueCount===1?'':'s')+' in MS portfolio. Activate to open Active & Closed Owned by Managed Services.'
+      : 'MS Queue — in queue');
 
   document.getElementById('bottomStripWrap').style.display = 'block';
   document.getElementById('bottomStrip').innerHTML =
@@ -508,13 +566,12 @@ function renderBottomStrip(){
         ? 'At Risk — '+atRisk.length+' ticket'+(atRisk.length===1?'':'s')+' behind expected pace. Activate to jump to ticket'+(atRisk.length===1?'':'s')+'.'
         : 'At Risk — all on pace'
     }) +
-    strip('queue', 'var(--band-blue)', 'MS Queue', msQueueCount, msQueueCount ? 'In MS portfolio' : 'In queue', {
+    strip('queue', msCheckinCount ? 'var(--band-gold)' : 'var(--band-blue)', 'MS Queue', msQueueCount, msQueueSub, {
       id: 'msQueueStrip',
       clickable: msQueueCount > 0,
       clickableAccent: 'blue',
-      ariaLabel: msQueueCount
-        ? 'MS Queue — '+msQueueCount+' ticket'+(msQueueCount===1?'':'s')+' in MS portfolio. Activate to open Active & Closed Owned by Managed Services.'
-        : 'MS Queue — in queue'
+      ariaLabel: msQueueAria,
+      extraClass: msCheckinCount ? ' ms-checkin-soft' : ''
     }) +
     strip('users', 'var(--band-blue)', 'Waiting on Others', waiting.length, waiting.length ? 'Sitting with someone else' : 'Nothing stalled', {
       id: 'waitingStrip',
@@ -543,7 +600,8 @@ function strip(icon, color, label, value, sub, opts){
   const clickable = !!opts.clickable;
   const idAttr = opts.id ? ' id="'+escapeAttr(opts.id)+'"' : '';
   const accentClass = clickable && opts.clickableAccent === 'blue' ? ' strip-card-clickable-blue' : '';
-  const classes = 'strip-card'+(clickable ? ' strip-card-clickable' : '')+accentClass;
+  const extraClass = opts.extraClass || '';
+  const classes = 'strip-card'+(clickable ? ' strip-card-clickable' : '')+accentClass+extraClass;
   const a11y = clickable
     ? ' role="button" tabindex="0" aria-label="'+escapeAttr(opts.ariaLabel || label)+'"'
     : (opts.id ? ' aria-disabled="true"' : '');
@@ -928,6 +986,7 @@ function renderContentListHtml(tickets){
   if(!tickets.length){
     return '<div class="content-empty">No open CONTENT tickets you own for delivery right now.</div>';
   }
+  const msSoloKeys = msSoloKeySet(STATE.data);
   return '<table class="content-table"><thead><tr>' +
     '<th>Key</th><th>Summary</th><th>Status</th><th>Assignee</th><th>Due</th><th>Partner</th>' +
     '</tr></thead><tbody>' +
@@ -936,8 +995,12 @@ function renderContentListHtml(tickets){
       const keyHtml = tLink
         ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+escapeHtml(t.key)+'</a>'
         : escapeHtml(t.key);
-      return '<tr>' +
-        '<td class="primary">'+keyHtml+'</td>' +
+      const soft = isMsCheckinSoft(t, msSoloKeys);
+      const softHint = soft
+        ? '<span class="ms-checkin-hint" title="5+ business days since create, still no RA — soft check-in">Check in</span>'
+        : '';
+      return '<tr'+(soft ? ' class="ms-checkin-row"' : '')+'>' +
+        '<td class="primary">'+keyHtml+softHint+'</td>' +
         '<td class="content-summary">'+escapeHtml(t.summary || '')+'</td>' +
         '<td>'+escapeHtml(t.status || '—')+'</td>' +
         '<td>'+(t.assigneeName ? escapeHtml(t.assigneeName) : '—')+'</td>' +
