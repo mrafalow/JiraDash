@@ -13,7 +13,7 @@ JIRA_API_TOKEN=your-atlassian-api-token
 JIRA_CLOUD_ID=70826d2c-16d0-4cfa-b445-cc7c9d3bce39
 ```
 
-Paste or rotate the token on the `JIRA_API_TOKEN=` line. For Disney, also set **`JIRA_CLOUD_ID`** (same as home). The proxy tries the Platform gateway first; if that returns 401 (some corporate networks), it automatically retries via **`JIRA_BASE_URL`**.
+Paste or rotate the token on the `JIRA_API_TOKEN=` line. For Disney, set **`JIRA_CLOUD_ID`** (same as home) so scoped tokens use the Platform gateway — without it, the site hostname often returns a false **404** for project WDW. If unset, the server tries to discover cloudId from `/_edge/tenant_info` and still prefers the gateway. If that returns 401 on some corporate networks, it automatically retries via **`JIRA_BASE_URL`**.
 
 Optional: **`JIRA_USE_SITE_API=1`** skips the gateway entirely.
 

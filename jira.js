@@ -105,8 +105,10 @@ async function assertSoloProjectVisible(){
   } catch(err){
     if(err.status === 404){
       throw new Error(
-        'Connected to Jira, but this API token cannot see project ' + SOLO_PROJECT_KEY + '. ' +
-        'The work token may differ from home — use the same token as home (with JIRA_CLOUD_ID) so the Platform gateway can load tickets.'
+        'Connected to Jira, but project ' + SOLO_PROJECT_KEY + ' is not visible on this API route. ' +
+        'Scoped tokens often need JIRA_CLOUD_ID (Platform gateway) — check /api/health: if route is site or usingCloudId is false, ' +
+        'add JIRA_CLOUD_ID from your home .env and restart. If gateway is already on, the token may lack access to ' +
+        SOLO_PROJECT_KEY + '.'
       );
     }
     throw err;

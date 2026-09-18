@@ -66,7 +66,7 @@ function resolveJiraRoute(cfg){
     jiraRoute = 'site';
     return Promise.resolve('site');
   }
-  if(!cfg.cloudId || !wantsScopedGateway()){
+  if(!cfg.cloudId){
     jiraRoute = 'site';
     return Promise.resolve('site');
   }
@@ -85,7 +85,8 @@ function resolveJiraRoute(cfg){
       jiraRoute = 'gateway';
       console.log('WARNING: API token cannot reach project ' + PROBE_PROJECT +
         ' (gateway HTTP ' + gwProbe.status + ', site HTTP ' + siteProbe.status + '). ' +
-        'Use the same JIRA_API_TOKEN as home with JIRA_CLOUD_ID, or update token scopes.');
+        'Confirm JIRA_API_TOKEN can access ' + PROBE_PROJECT +
+        ' (and set JIRA_CLOUD_ID explicitly if tenant_info discovery failed).');
       return 'gateway';
     });
   });
@@ -101,13 +102,6 @@ function getJiraConfig(){
   if(!token) missing.push('JIRA_API_TOKEN');
   if(!baseUrl && !cloudId) missing.push('JIRA_BASE_URL (or JIRA_CLOUD_ID)');
   return { email, token, baseUrl, cloudId, missing };
-}
-
-function jiraOriginFor(cfg, useGateway){
-  if(useGateway && cfg.cloudId){
-    return 'https://api.atlassian.com/ex/jira/' + encodeURIComponent(cfg.cloudId);
-  }
-  return cfg.baseUrl;
 }
 
 /**
@@ -159,16 +153,13 @@ function resolveCloudIdFromTenantInfo(baseUrl){
   return resolvingCloudId;
 }
 
-/** Use api.atlassian.com/ex/jira/{cloudId} only when explicitly requested. */
-function wantsScopedGateway(){
-  if(process.env.JIRA_USE_SITE_API === '1' || process.env.JIRA_USE_SITE_API === 'true') return false;
-  if(process.env.JIRA_USE_SCOPED_GATEWAY === '1' || process.env.JIRA_USE_SCOPED_GATEWAY === 'true') return true;
-  const explicit = (process.env.JIRA_CLOUD_ID || '').trim();
-  return !!explicit;
-}
-
+/**
+ * Prefer api.atlassian.com/ex/jira/{cloudId} whenever a cloudId is available.
+ * Scoped tokens often get a false project 404 via the site hostname; gateway works.
+ * Opt out with JIRA_USE_SITE_API=1. Discover cloudId via tenant_info when env omits it.
+ */
 function ensureCloudId(cfg){
-  if(!wantsScopedGateway()) return Promise.resolve(cfg);
+  if(useSiteApiOnly()) return Promise.resolve(cfg);
   if(cfg.cloudId) return Promise.resolve(cfg);
   if(!cfg.baseUrl) return Promise.resolve(cfg);
   return resolveCloudIdFromTenantInfo(cfg.baseUrl).then((id) => {
@@ -224,7 +215,8 @@ function shouldTryGatewayFirst(cfg){
   if(!cfg.cloudId) return false;
   if(jiraRoute === 'site') return false;
   if(jiraRoute === 'gateway') return true;
-  return wantsScopedGateway();
+  // cloudId present (env or tenant_info) → try Platform gateway first.
+  return true;
 }
 
 function readRequestBody(req){
@@ -299,11 +291,13 @@ function sendJiraProxyResponse(res, cfg, result){
     contentType = 'application/json; charset=utf-8';
     buf = Buffer.from(JSON.stringify({
       message: upstreamMsg && /scope/i.test(upstreamMsg)
-        ? ('Jira rejected this call due to token scopes: ' + upstreamMsg + ' (scoped tokens need api.atlassian.com + JIRA_CLOUD_ID; /myself needs read:jira-user).')
+        ? ('Jira rejected this call due to token scopes: ' + upstreamMsg +
+          ' (scoped tokens need the Platform gateway; /myself needs read:jira-user).')
         : (result.viaGateway && (status === 401 || status === 403)
           ? 'Jira Platform gateway rejected this token (HTTP ' + status + '). ' +
-            'Use the same JIRA_API_TOKEN as your home setup with JIRA_CLOUD_ID, or create a token with Jira API access to project ' + PROBE_PROJECT + '.'
-          : 'Jira rejected the credentials in .env (check JIRA_EMAIL, JIRA_API_TOKEN, and for scoped tokens JIRA_CLOUD_ID / api.atlassian.com).'),
+            'Confirm JIRA_EMAIL / JIRA_API_TOKEN, and that the token can access project ' + PROBE_PROJECT + '.'
+          : 'Jira rejected the credentials in .env (check JIRA_EMAIL, JIRA_API_TOKEN). ' +
+            'If /api/health shows route=site, set JIRA_CLOUD_ID so scoped tokens use the Platform gateway.'),
       status,
       usingCloudId: result.viaGateway,
       route: result.viaGateway ? 'gateway' : 'site'
@@ -366,11 +360,13 @@ const server = http.createServer((req, res) => {
   if(pathname === '/api/health'){
     const cfg0 = getJiraConfig();
     ensureCloudId(cfg0).then((cfg) => {
+      const cloudIdFromEnv = !!(process.env.JIRA_CLOUD_ID || '').trim();
       sendJson(res, 200, {
         ok: true,
         jiraConfigured: cfg.missing.length === 0,
         missing: cfg.missing,
         usingCloudId: !!cfg.cloudId,
+        cloudIdSource: cfg.cloudId ? (cloudIdFromEnv ? 'env' : 'tenant_info') : null,
         route: jiraRoute || (cfg.cloudId && !useSiteApiOnly() ? 'gateway (initial)' : 'site'),
         site: cfg.cloudId ? ('api.atlassian.com/ex/jira/' + cfg.cloudId) : cfg.baseUrl
       });
