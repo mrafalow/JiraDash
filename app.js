@@ -473,7 +473,11 @@ function renderBottomStrip(){
   document.getElementById('bottomStripWrap').style.display = 'block';
   document.getElementById('bottomStrip').innerHTML =
     '<div class="strip-card publish-light-card">' +
-      '<div class="light '+(publishState==='off'?'':publishState)+'"></div>' +
+      '<svg class="light mouse-head'+(publishState==='off'?'':' '+publishState)+'" viewBox="0 0 46 46" width="46" height="46" aria-hidden="true" focusable="false">' +
+        '<circle class="mouse-ear" cx="11" cy="12" r="9"/>' +
+        '<circle class="mouse-ear" cx="35" cy="12" r="9"/>' +
+        '<circle class="mouse-face" cx="23" cy="28" r="14"/>' +
+      '</svg>' +
       '<div class="publish-light-label">'+(publishState==='off'?'Nothing publishing today':publishState==='green'?'Clear to publish':'Unlock needed — go now')+'</div>' +
     '</div>' +
     strip('warning', 'var(--band-orange)', 'At Risk', atRisk.length, atRisk.length ? 'Behind expected pace' : 'All on pace', {
