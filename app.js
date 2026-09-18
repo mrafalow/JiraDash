@@ -19,13 +19,69 @@ function iconSvg(name){
     calendar: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>',
     warning: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3l9 16H3L12 3zM12 10v4M12 17.5h.01"/></svg>',
     users: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19c0-3.3 2.9-5.5 6.5-5.5s6.5 2.2 6.5 5.5M17 8.2a3 3 0 010 5.8M21 19c0-2.5-1.8-4.3-4-5"/></svg>',
-    translate: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg>'
+    translate: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg>',
+    queue: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="19" cy="18" r="2.2"/></svg>'
   };
   return icons[name] || '';
 }
 
+/** CONTENT portfolio — same set as Active & Closed “OWNED BY MANAGED SERVICES”. */
+function msQueueTickets(){
+  return (STATE.data && STATE.data.contentTickets) || [];
+}
+
 function escapeHtml(s){ const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 function escapeAttr(s){ return escapeHtml(s).replace(/"/g, '&quot;'); }
+
+/** WDW Active + MS Solo inject (CONTENT assigned + RA) for fire lanes / strip. */
+function soloSourceTickets(){
+  const active = (STATE.data && STATE.data.activeTickets) || [];
+  const ms = (STATE.data && STATE.data.msSoloTickets) || [];
+  return active.concat(ms);
+}
+
+function msBadgeHtml(ticket){
+  if(!isManagedServicesTicket(ticket)) return '';
+  return '<span class="ms-badge" title="Managed Services — truncated pipeline">MS</span>';
+}
+
+/** Hard MS stall card — no pipeline score; click opens Jira. */
+function renderMsStallCard(t){
+  const reason = msStallReason(t);
+  const dueLabel = msStallCalendarDueLabel(t);
+  const priorityShort = (t.priority || '').replace(/^\d+ - /,'');
+  const tLink = jiraLink(t.key);
+  const summaryHtml = tLink
+    ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+escapeHtml(t.summary || t.key)+'</a>'
+    : escapeHtml(t.summary || t.key);
+  const openHref = tLink || '';
+  return '<div class="ticket-card ms-ticket ms-stall-card" style="--band-color:var(--band-orange)" data-key="'+escapeAttr(t.key)+'" data-ms-stall="1">' +
+    '<div class="ticket-row"'+(openHref ? ' data-ms-stall-open="'+escapeAttr(openHref)+'"' : '')+'>' +
+      '<div class="score-stack">' +
+        '<div class="score-badge ms-stall-mark" style="background:var(--band-orange-bg);color:var(--band-orange)" title="MS stall — not scored">—</div>' +
+        '<span class="ms-badge" title="Still with Managed Services">MS</span>' +
+      '</div>' +
+      '<div class="ticket-main">' +
+        '<div class="ticket-summary">'+summaryHtml+'</div>' +
+        '<div class="ticket-tag">'+escapeHtml(reason)+'</div>' +
+      '</div>' +
+      '<div class="ticket-meta">' +
+        '<div class="meta-col">Due<div class="val">'+escapeHtml(dueLabel)+'</div></div>' +
+        (priorityShort ? '<div class="priority-chip" style="background:var(--band-orange-bg);color:var(--band-orange)">'+escapeHtml(priorityShort)+'</div>' : '') +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function bindMsStallOpen(container){
+  container.querySelectorAll('[data-ms-stall-open]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if(e.target.closest('a')) return;
+      const href = el.getAttribute('data-ms-stall-open');
+      if(href) window.open(href, '_blank', 'noopener');
+    });
+  });
+}
 
 function renderTicketCard({t, model, scoring}){
   const isExpanded = STATE.expandedKeys.has(t.key);
@@ -50,9 +106,12 @@ function renderTicketCard({t, model, scoring}){
   const tLink = jiraLink(t.key);
   const summaryHtml = tLink ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+escapeHtml(t.summary)+'</a>' : escapeHtml(t.summary);
 
-  return '<div class="ticket-card'+(isExpanded?' expanded':'')+'" style="--band-color:'+BAND_COLOR[scoring.band]+'" data-key="'+t.key+'">' +
+  return '<div class="ticket-card'+(isExpanded?' expanded':'')+(isManagedServicesTicket(t)?' ms-ticket':'')+'" style="--band-color:'+BAND_COLOR[scoring.band]+'" data-key="'+t.key+'">' +
     '<div class="ticket-row" data-toggle="'+t.key+'">' +
-      '<div class="score-badge" style="background:'+BAND_BG[scoring.band]+';color:'+BAND_COLOR[scoring.band]+'">'+scoring.score+'</div>' +
+      '<div class="score-stack">' +
+        '<div class="score-badge" style="background:'+BAND_BG[scoring.band]+';color:'+BAND_COLOR[scoring.band]+'">'+scoring.score+'</div>' +
+        msBadgeHtml(t) +
+      '</div>' +
       '<div class="ticket-main">' +
         '<div class="ticket-summary">'+summaryHtml+'</div>' +
         '<div class="ticket-tag">'+tag+'</div>' +
@@ -81,10 +140,10 @@ function renderWaitingNudgeCard({t, model, scoring}){
     ? '<a class="jira-link" href="'+stLink+'" target="_blank" rel="noopener">'+escapeHtml(nudge.blockerType)+'</a>'
     : escapeHtml(nudge.blockerType);
 
-  return '<div class="nudge-card" data-key="'+escapeAttr(t.key)+'" style="--band-color:'+BAND_COLOR[scoring.band]+'">' +
+  return '<div class="nudge-card'+(isManagedServicesTicket(t)?' ms-ticket':'')+'" data-key="'+escapeAttr(t.key)+'" style="--band-color:'+BAND_COLOR[scoring.band]+'">' +
     '<div class="nudge-top">' +
       '<div class="nudge-identity">' +
-        '<div class="nudge-key">'+keyHtml+'</div>' +
+        '<div class="nudge-key">'+keyHtml+msBadgeHtml(t)+'</div>' +
         '<div class="nudge-summary">'+escapeHtml(t.summary||'')+'</div>' +
       '</div>' +
       '<div class="nudge-due" title="'+escapeAttr(nudge.dueFmt)+'">'+escapeHtml(nudge.dueLabel)+'</div>' +
@@ -139,8 +198,9 @@ function bindNudgeCopyButtons(container){
 
 function renderTicketList(){
   const container = document.getElementById('ticketList');
-  const tickets = STATE.data.activeTickets;
-  if(!tickets.length){
+  const tickets = soloSourceTickets();
+  const msStalls = collectMsStallTickets(STATE.data);
+  if(!tickets.length && !msStalls.length){
     container.innerHTML = '<div class="empty-state"><b>Nothing active right now</b>New requests will show up here the moment they are assigned to you.</div>';
     return;
   }
@@ -160,12 +220,18 @@ function renderTicketList(){
     });
   });
 
+  // MS stalls (still with MS, due ≤10 calendar days) → Needs Attention; sort by due; no pipeline score.
+  const stallKeys = new Set(msStalls.map(t => t.key));
+  byLane.attention = byLane.attention.filter(item => !stallKeys.has(item.t.key));
+  const stallItems = msStalls.map(t => ({ t, msStall: true }));
+
   const commentsWarning = STATE.data && STATE.data.commentsWarning
     ? '<div class="comments-warning" role="status">'+escapeHtml(STATE.data.commentsWarning)+'</div>'
     : '';
 
   container.innerHTML = commentsWarning + SOLO_LANES.map(lane => {
-    const items = byLane[lane.id] || [];
+    const scoredItems = byLane[lane.id] || [];
+    const items = lane.id === 'attention' ? stallItems.concat(scoredItems) : scoredItems;
     let cards;
     if(!items.length){
       cards = lane.id === 'waiting'
@@ -173,6 +239,8 @@ function renderTicketList(){
         : '<div class="lane-empty">Nothing in this lane</div>';
     } else if(lane.id === 'waiting'){
       cards = items.map(renderWaitingNudgeCard).join('');
+    } else if(lane.id === 'attention'){
+      cards = items.map(item => item.msStall ? renderMsStallCard(item.t) : renderTicketCard(item)).join('');
     } else {
       cards = items.map(renderTicketCard).join('');
     }
@@ -196,6 +264,7 @@ function renderTicketList(){
     });
   });
   bindNudgeCopyButtons(container);
+  bindMsStallOpen(container);
 }
 
 function dueDateKey(d){
@@ -210,6 +279,11 @@ function dueDateKey(d){
 
 function isContentTicket(t){
   return !!(t && t.key && String(t.key).toUpperCase().startsWith('CONTENT-'));
+}
+
+function shortHorizonTicketKey(key){
+  if(!key) return '';
+  return String(key).replace(/^WDW-/i, 'W').replace(/^CONTENT-/i, 'MS');
 }
 
 /** Active WDW/own + CONTENT delivery rows for due calendar / horizon list. */
@@ -287,13 +361,16 @@ function bindHorizonInteractions(){
         renderHorizonPanel();
       });
     });
+    root.querySelectorAll('.cal-day-chip').forEach(el => {
+      el.addEventListener('click', (e) => e.stopPropagation());
+    });
   }
   const showAll = document.getElementById('horizonShowAll');
   if(showAll){
-    showAll.addEventListener('click', () => {
+    showAll.onclick = () => {
       STATE.horizonFilterDay = null;
       renderHorizonPanel();
-    });
+    };
   }
 }
 
@@ -301,9 +378,10 @@ function renderHorizonListItems(listTickets){
   return '<div class="horizon-list">'+listTickets.map((t, i) => {
     const due = horizonDueLabel(t.dueDate);
     const tLink = jiraLink(t.key);
+    const shortKey = shortHorizonTicketKey(t.key);
     const keyHtml = tLink
-      ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+escapeHtml(t.key)+'</a>'
-      : escapeHtml(t.key);
+      ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+escapeHtml(shortKey)+'</a>'
+      : escapeHtml(shortKey);
     const kind = isContentTicket(t) ? 'content' : 'own';
     return '<div class="horizon-item kind-'+kind+'">' +
       '<div class="horizon-rank">'+(i+1)+'</div>' +
@@ -356,28 +434,40 @@ function renderHorizonPanel(){
     if(hasContent) classes.push('has-due-content');
     if(isToday) classes.push('is-today');
     if(isSelected) classes.push('is-selected');
-    const marks = [];
-    if(hasOwn) marks.push('<span class="cal-day-mark mark-own" title="WDW / own"></span>');
-    if(hasContent) marks.push('<span class="cal-day-mark mark-content" title="CONTENT"></span>');
+    const visible = due.slice(0, 1);
+    const overflow = due.length - visible.length;
+    const chips = visible.map(t => {
+      const kind = isContentTicket(t) ? 'content' : 'own';
+      const label = shortHorizonTicketKey(t.key);
+      const link = jiraLink(t.key);
+      if(link){
+        return '<a class="cal-day-chip kind-'+kind+' jira-link" href="'+escapeAttr(link)+'" target="_blank" rel="noopener">'+escapeHtml(label)+'</a>';
+      }
+      return '<span class="cal-day-chip kind-'+kind+'">'+escapeHtml(label)+'</span>';
+    }).join('');
+    const overflowHtml = overflow > 0
+      ? '<span class="cal-day-more">+'+overflow+' more</span>'
+      : '';
     cells.push(
-      '<button type="button" class="'+classes.join(' ')+'" data-day-key="'+escapeAttr(key)+'"'+(title ? ' title="'+escapeAttr(title)+'"' : '')+' aria-pressed="'+(isSelected ? 'true' : 'false')+'">' +
+      '<div class="'+classes.join(' ')+'" data-day-key="'+escapeAttr(key)+'" role="button" tabindex="0"'+(title ? ' title="'+escapeAttr(title)+'"' : '')+' aria-pressed="'+(isSelected ? 'true' : 'false')+'">' +
         '<span class="cal-day-num">'+day+'</span>' +
-        (marks.length ? '<span class="cal-day-marks">'+marks.join('')+'</span>' : '') +
-      '</button>'
+        (chips || overflowHtml ? '<span class="cal-day-chips">'+chips+overflowHtml+'</span>' : '') +
+      '</div>'
     );
   }
 
   const todayNote = dueToday.length
     ? '<div class="cal-today-note"><b>'+dueToday.length+'</b> due today — '+dueToday.map(t => {
         const link = jiraLink(t.key);
-        return link ? '<a class="jira-link" href="'+link+'" target="_blank" rel="noopener">'+escapeHtml(t.key)+'</a>' : escapeHtml(t.key);
+        const sk = shortHorizonTicketKey(t.key);
+        return link ? '<a class="jira-link" href="'+link+'" target="_blank" rel="noopener">'+escapeHtml(sk)+'</a>' : escapeHtml(sk);
       }).join(', ')+'</div>'
     : '<div class="cal-today-note empty">Nothing due today</div>';
 
   const legend =
     '<div class="cal-legend">' +
-      '<span class="cal-legend-item"><span class="cal-day-mark mark-own"></span> WDW / own</span>' +
-      '<span class="cal-legend-item"><span class="cal-day-mark mark-content"></span> CONTENT</span>' +
+      '<span class="cal-legend-item"><span class="cal-day-mark mark-own"></span> WDW</span>' +
+      '<span class="cal-legend-item"><span class="cal-day-mark mark-content"></span> MS</span>' +
     '</div>';
 
   document.getElementById('dueCalendar').innerHTML =
@@ -406,7 +496,7 @@ function renderHorizonPanel(){
   if(!listTickets.length){
     document.getElementById('horizonList').innerHTML = filterDay
       ? '<div class="horizon-empty">No launches due on '+escapeHtml(filterLabel)+'</div>'
-      : '<div class="horizon-empty">No upcoming due dates on Active or CONTENT tickets</div>';
+      : '<div class="horizon-empty">No upcoming due dates on WDW or MS tickets</div>';
   } else {
     document.getElementById('horizonList').innerHTML = renderHorizonListItems(listTickets);
   }
@@ -415,7 +505,7 @@ function renderHorizonPanel(){
 }
 
 function renderBottomStrip(){
-  const tickets = STATE.data.activeTickets;
+  const tickets = soloSourceTickets();
   const scored = tickets.map(t => {
     const model = buildStageModel(t);
     return { t, model, scoring: computeScore(t, model) };
@@ -446,11 +536,27 @@ function renderBottomStrip(){
   }
 
   const translationsOpen = openTranslationsEntries().length;
+  const msQueue = msQueueTickets();
+  const msQueueCount = msQueue.length;
+  const msCheckins = collectMsCheckinTickets(STATE.data);
+  const msCheckinCount = msCheckins.length;
+  const msQueueSub = msCheckinCount
+    ? 'Red flag · '+msCheckinCount+' idle after handoff'
+    : (msQueueCount ? 'In MS portfolio' : 'In queue');
+  const msQueueAria = msCheckinCount
+    ? 'MS Queue — '+msQueueCount+' in portfolio; '+msCheckinCount+' soft red flag'+(msCheckinCount===1?'':'s')+' (3+ calendar days since MS handoff, no progress). Activate to open Owned by Managed Services.'
+    : (msQueueCount
+      ? 'MS Queue — '+msQueueCount+' ticket'+(msQueueCount===1?'':'s')+' in MS portfolio. Activate to open Active & Closed Owned by Managed Services.'
+      : 'MS Queue — in queue');
 
   document.getElementById('bottomStripWrap').style.display = 'block';
   document.getElementById('bottomStrip').innerHTML =
     '<div class="strip-card publish-light-card">' +
-      '<div class="light '+(publishState==='off'?'':publishState)+'"></div>' +
+      '<svg class="light mouse-head'+(publishState==='off'?'':' '+publishState)+'" viewBox="0 0 46 46" width="46" height="46" aria-hidden="true" focusable="false">' +
+        '<circle class="mouse-ear" cx="11" cy="12" r="9"/>' +
+        '<circle class="mouse-ear" cx="35" cy="12" r="9"/>' +
+        '<circle class="mouse-face" cx="23" cy="28" r="14"/>' +
+      '</svg>' +
       '<div class="publish-light-label">'+(publishState==='off'?'Nothing publishing today':publishState==='green'?'Clear to publish':'Unlock needed — go now')+'</div>' +
     '</div>' +
     strip('warning', 'var(--band-orange)', 'At Risk', atRisk.length, atRisk.length ? 'Behind expected pace' : 'All on pace', {
@@ -460,7 +566,13 @@ function renderBottomStrip(){
         ? 'At Risk — '+atRisk.length+' ticket'+(atRisk.length===1?'':'s')+' behind expected pace. Activate to jump to ticket'+(atRisk.length===1?'':'s')+'.'
         : 'At Risk — all on pace'
     }) +
-    strip('calendar', 'var(--band-red)', 'Due Today', dueToday.length, dueToday.length ? 'Needs a look' : 'Nothing due') +
+    strip('queue', msCheckinCount ? 'var(--band-red)' : 'var(--band-blue)', 'MS Queue', msQueueCount, msQueueSub, {
+      id: 'msQueueStrip',
+      clickable: msQueueCount > 0,
+      clickableAccent: 'blue',
+      ariaLabel: msQueueAria,
+      extraClass: msCheckinCount ? ' ms-checkin-soft' : ''
+    }) +
     strip('users', 'var(--band-blue)', 'Waiting on Others', waiting.length, waiting.length ? 'Sitting with someone else' : 'Nothing stalled', {
       id: 'waitingStrip',
       clickable: waiting.length > 0,
@@ -479,6 +591,7 @@ function renderBottomStrip(){
     });
 
   bindAtRiskStrip();
+  bindMsQueueStrip();
   bindWaitingStrip();
   bindTranslationsStrip();
 }
@@ -487,7 +600,8 @@ function strip(icon, color, label, value, sub, opts){
   const clickable = !!opts.clickable;
   const idAttr = opts.id ? ' id="'+escapeAttr(opts.id)+'"' : '';
   const accentClass = clickable && opts.clickableAccent === 'blue' ? ' strip-card-clickable-blue' : '';
-  const classes = 'strip-card'+(clickable ? ' strip-card-clickable' : '')+accentClass;
+  const extraClass = opts.extraClass || '';
+  const classes = 'strip-card'+(clickable ? ' strip-card-clickable' : '')+accentClass+extraClass;
   const a11y = clickable
     ? ' role="button" tabindex="0" aria-label="'+escapeAttr(opts.ariaLabel || label)+'"'
     : (opts.id ? ' aria-disabled="true"' : '');
@@ -794,6 +908,55 @@ function bindTranslationsStrip(){
   });
 }
 
+function ensureActiveRequestsView(){
+  const nav = document.querySelector('.nav-item[data-view="requests"]');
+  if(nav && !nav.classList.contains('active')) nav.click();
+  if(STATE.tableMode !== 'active'){
+    const toggle = document.getElementById('toggleActive');
+    if(toggle) toggle.click();
+  }
+}
+
+function highlightMsSection(section){
+  if(!section) return;
+  section.classList.remove('flash-highlight');
+  void section.offsetWidth;
+  section.classList.add('flash-highlight');
+  const clear = () => section.classList.remove('flash-highlight');
+  section.addEventListener('animationend', clear, { once: true });
+  setTimeout(clear, 2200);
+}
+
+function scrollToMsQueueSection(){
+  ensureActiveRequestsView();
+  const section = document.getElementById('contentDeliveryActive');
+  if(!section) return false;
+  // View/toggle may have just become visible — scroll after layout.
+  requestAnimationFrame(() => {
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    highlightMsSection(section);
+  });
+  return true;
+}
+
+function handleMsQueueActivate(){
+  if(!msQueueTickets().length) return;
+  scrollToMsQueueSection();
+}
+
+function bindMsQueueStrip(){
+  const el = document.getElementById('msQueueStrip');
+  if(!el) return;
+  if(!el.classList.contains('strip-card-clickable')) return;
+  el.addEventListener('click', handleMsQueueActivate);
+  el.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter' || e.key === ' '){
+      e.preventDefault();
+      handleMsQueueActivate();
+    }
+  });
+}
+
 function formatPublishEarlyCell(value){
   if(value == null || value === '') return '';
   const s = String(value).trim();
@@ -819,22 +982,61 @@ function contentDueLabel(dueDate){
   return pretty;
 }
 
+const MS_PROGRESS_CHIPS = [
+  { id: 'status', label: 'Status', onKey: 'statusMoved', reason: 'Status moved' },
+  { id: 'subtask', label: 'Subtask', onKey: 'hasSub', reason: 'Subtask created' },
+  { id: 'ra', label: 'RA', onKey: 'hasRa', reason: 'RA created' }
+];
+
+function renderContentMotionCell(ticket){
+  const motion = contentMotionState(ticket);
+  const tip = motion.reasons.length ? motion.reasons.join(' · ') : 'No progress yet';
+  const litLabels = MS_PROGRESS_CHIPS.filter(c => motion[c.onKey]).map(c => c.label);
+  const aria = litLabels.length
+    ? 'Progress: ' + litLabels.join(', ') + ' on'
+    : 'Progress: Status, Subtask, and RA off';
+  const chips = MS_PROGRESS_CHIPS.map(c => {
+    const on = !!motion[c.onKey];
+    return '<span class="ms-progress-chip'+(on?' is-on':'')+'" data-chip="'+c.id+'" title="'+escapeAttr(c.reason+(on?'':' — not yet'))+'">'+
+      escapeHtml(c.label)+
+    '</span>';
+  }).join('');
+  return '<span class="ms-progress" title="'+escapeAttr(tip)+'" role="img" aria-label="'+escapeAttr(aria)+'">' +
+    '<span class="ms-progress-chips" aria-hidden="true">'+chips+'</span>' +
+  '</span>';
+}
+
+function msSoftFlagTitle(ticket){
+  const handoff = resolveMsHandoff(ticket);
+  const src = handoff && handoff.source === 'key-change'
+    ? 'WDW→CONTENT handoff'
+    : 'CONTENT created (fallback)';
+  const when = handoff && handoff.date ? handoff.date : 'unknown';
+  return 'Soft red flag: 3+ calendar days since '+src+' ('+when+'), still with MS, no progress action';
+}
+
 function renderContentListHtml(tickets){
   if(!tickets.length){
     return '<div class="content-empty">No open CONTENT tickets you own for delivery right now.</div>';
   }
+  const msSoloKeys = msSoloKeySet(STATE.data);
   return '<table class="content-table"><thead><tr>' +
-    '<th>Key</th><th>Summary</th><th>Status</th><th>Assignee</th><th>Due</th><th>Partner</th>' +
+    '<th>Key</th><th>Summary</th><th>Status</th><th>Progress</th><th>Assignee</th><th>Due</th><th>Partner</th>' +
     '</tr></thead><tbody>' +
     tickets.map(t => {
       const tLink = jiraLink(t.key);
       const keyHtml = tLink
         ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+escapeHtml(t.key)+'</a>'
         : escapeHtml(t.key);
-      return '<tr>' +
-        '<td class="primary">'+keyHtml+'</td>' +
+      const soft = isMsCheckinSoft(t, msSoloKeys);
+      const softHint = soft
+        ? '<span class="ms-checkin-flag" title="'+escapeAttr(msSoftFlagTitle(t))+'" role="img" aria-label="Soft red flag — check in with MS">⚑</span>'
+        : '';
+      return '<tr'+(soft ? ' class="ms-checkin-row"' : '')+'>' +
+        '<td class="primary">'+keyHtml+softHint+'</td>' +
         '<td class="content-summary">'+escapeHtml(t.summary || '')+'</td>' +
         '<td>'+escapeHtml(t.status || '—')+'</td>' +
+        '<td class="ms-progress-cell">'+renderContentMotionCell(t)+'</td>' +
         '<td>'+(t.assigneeName ? escapeHtml(t.assigneeName) : '—')+'</td>' +
         '<td>'+escapeHtml(contentDueLabel(t.dueDate))+'</td>' +
         '<td class="partner-cell">'+(t.partner ? formatPartnerCell(t.partner) : '—')+'</td>' +
@@ -927,6 +1129,7 @@ function openTranslationsEntries(){
     entries.push({ ticket: t, st });
   }
   ((STATE.data && STATE.data.activeTickets) || []).forEach(consider);
+  ((STATE.data && STATE.data.msSoloTickets) || []).forEach(consider);
   recentlyClosedOwnTickets().forEach(consider);
   return entries;
 }
@@ -935,6 +1138,10 @@ function renderTranslations(){
   const wrap = document.getElementById('translationsWrap');
   const entries = [];
   ((STATE.data && STATE.data.activeTickets) || []).forEach(t => {
+    const st = (t.subtasks || []).find(s => s.type === 'TRANSLATIONS');
+    if(st) entries.push({ ticket: t, st });
+  });
+  ((STATE.data && STATE.data.msSoloTickets) || []).forEach(t => {
     const st = (t.subtasks || []).find(s => s.type === 'TRANSLATIONS');
     if(st) entries.push({ ticket: t, st });
   });
@@ -1079,8 +1286,14 @@ async function loadAll(spinning){
     STATE.data = data;
     document.getElementById('greetingText').textContent =
       data.currentUserFirstName ? 'Good morning, ' + data.currentUserFirstName : 'Good morning';
+    const soloCount = ((data.activeTickets || []).length) + ((data.msSoloTickets || []).length);
     document.getElementById('greetingSub').textContent =
-      data.activeTickets.length ? data.activeTickets.length + ' active ticket' + (data.activeTickets.length===1?'':'s') + ' on your board.' : 'Nothing active — you are all caught up.';
+      soloCount
+        ? soloCount + ' active ticket' + (soloCount===1?'':'s') + ' on your board' +
+          ((data.msSoloTickets || []).length
+            ? ' (' + data.msSoloTickets.length + ' Managed Services).'
+            : '.')
+        : 'Nothing active — you are all caught up.';
     renderHorizonPanel();
     renderTicketList();
     renderBottomStrip();

@@ -105,8 +105,10 @@ async function assertSoloProjectVisible(){
   } catch(err){
     if(err.status === 404){
       throw new Error(
-        'Connected to Jira, but this API token cannot see project ' + SOLO_PROJECT_KEY + '. ' +
-        'The work token may differ from home — use the same token as home (with JIRA_CLOUD_ID) so the Platform gateway can load tickets.'
+        'Connected to Jira, but project ' + SOLO_PROJECT_KEY + ' is not visible on this API route. ' +
+        'Scoped tokens often need JIRA_CLOUD_ID (Platform gateway) — check /api/health: if route is site or usingCloudId is false, ' +
+        'add JIRA_CLOUD_ID from your home .env and restart. If gateway is already on, the token may lack access to ' +
+        SOLO_PROJECT_KEY + '.'
       );
     }
     throw err;
@@ -170,6 +172,7 @@ function mapSubtask(issue, currentAccountId, includeDescription){
     assigneeName: assignee.assigneeName,
     assigneeIsCurrentUser: assignee.assigneeIsCurrentUser,
     createdDate: datePrefix(f.created),
+    dueDate: datePrefix(f.duedate),
     closedDate: datePrefix(f.resolutiondate)
   };
   if(includeDescription || mapped.type === 'RA'){
@@ -239,23 +242,177 @@ function mapContentTicket(issue, currentAccountId, fieldIds){
     summary: f.summary || '',
     status: mapStatusName(f),
     assigneeName: assignee.assigneeName,
+    assigneeIsCurrentUser: assignee.assigneeIsCurrentUser,
+    createdDate: datePrefix(f.created),
     dueDate: datePrefix(f.duedate),
     partner: partnerValue(f, ids.partnerField),
-    priority: mapPriority(f)
+    priority: mapPriority(f),
+    hasRa: false,
+    hasSubtasks: false,
+    handoffDate: null,
+    handoffSource: null
   };
+}
+
+/**
+ * Find earliest WDW-* → CONTENT-* Key change in a changelog page list.
+ * Returns { date: 'YYYY-MM-DD', source: 'key-change' } or null.
+ */
+function handoffFromChangelogHistories(histories){
+  if(!Array.isArray(histories) || !histories.length) return null;
+  let best = null;
+  for(const h of histories){
+    const items = (h && h.items) || [];
+    for(const item of items){
+      if(!item) continue;
+      const field = String(item.field || item.fieldId || '').toLowerCase();
+      if(field !== 'key' && field !== 'issuekey') continue;
+      const fromKey = String(item.fromString || item.from || '').trim().toUpperCase();
+      const toKey = String(item.toString || item.to || '').trim().toUpperCase();
+      if(!fromKey.startsWith('WDW-') || !toKey.startsWith('CONTENT-')) continue;
+      const day = datePrefix(h.created);
+      if(!day) continue;
+      if(!best || day < best.date) best = { date: day, source: 'key-change' };
+    }
+  }
+  return best;
+}
+
+/** Paginate GET /rest/api/3/issue/{key}/changelog for one CONTENT parent. */
+async function fetchIssueChangelogHistories(issueKey){
+  const histories = [];
+  let startAt = 0;
+  const maxResults = 100;
+  for(let page = 0; page < 20; page++){
+    const path = '/rest/api/3/issue/' + encodeURIComponent(issueKey) +
+      '/changelog?startAt=' + startAt + '&maxResults=' + maxResults;
+    const data = await jiraFetch(path);
+    const chunk = (data && data.values) || [];
+    histories.push.apply(histories, chunk);
+    const total = (data && typeof data.total === 'number') ? data.total : histories.length;
+    startAt += chunk.length;
+    if(!chunk.length || startAt >= total) break;
+  }
+  return histories;
+}
+
+/**
+ * Resolve MS handoff dates for CONTENT parents via changelog Key change.
+ * Fallback (caller): CONTENT created date when no WDW→CONTENT Key change found.
+ */
+async function fetchContentHandoffByKeys(keys){
+  const byKey = {};
+  if(!keys || !keys.length) return byKey;
+  const unique = Array.from(new Set(keys.filter(Boolean)));
+  const concurrency = 6;
+  for(let i = 0; i < unique.length; i += concurrency){
+    const chunk = unique.slice(i, i + concurrency);
+    await Promise.all(chunk.map(async (key) => {
+      try{
+        const histories = await fetchIssueChangelogHistories(key);
+        const hit = handoffFromChangelogHistories(histories);
+        if(hit) byKey[key] = hit;
+      } catch(err){
+        console.warn('[jira] CONTENT handoff changelog failed for', key + ':', err.message || err);
+      }
+    }));
+  }
+  return byKey;
+}
+
+/**
+ * CONTENT parents assigned to currentUser with an RA subtask → Solo inject candidates.
+ * Portfolio table (reporter OR assignee) stays separate via fetchContentTickets.
+ */
+async function fetchMsSoloTickets(currentAccountId, fieldIds){
+  const jql =
+    'project = CONTENT AND assignee = currentUser() AND issuetype != Sub-task AND statusCategory != Done ORDER BY duedate ASC';
+  const parentFields = [
+    'summary', 'priority', 'duedate', 'created', 'status', 'description',
+    fieldIds.publishEarlyField || DEFAULT_PUBLISH_EARLY_FIELD,
+    fieldIds.partnerField || DEFAULT_PARTNER_FIELD,
+    'assignee'
+  ];
+  try{
+    const issues = await jiraSearch(jql, parentFields, 50);
+    if(!issues.length) return { jql, tickets: [] };
+
+    const keys = issues.map(i => i.key);
+    const [subsByParent, commentsResult] = await Promise.all([
+      fetchSubtasksForParents(keys, currentAccountId, true),
+      fetchCommentsForParents(keys)
+    ]);
+    const commentSignalsByKey = (commentsResult && commentsResult.byKey) || {};
+
+    const tickets = issues.map(i => {
+      const mapped = mapActiveTicket(i, subsByParent, currentAccountId, fieldIds, commentSignalsByKey);
+      mapped.managedServices = true;
+      mapped.scoringProfile = 'ms';
+      return mapped;
+    }).filter(t => {
+      // Gate: RA must exist (MS created RA and assigned parent back).
+      return (t.subtasks || []).some(st => st && st.type === 'RA');
+    });
+
+    return {
+      jql,
+      tickets,
+      commentsWarning: (commentsResult && commentsResult.error) || null
+    };
+  } catch(err){
+    console.warn('[jira] MS Solo CONTENT fetch failed:', err.message || err);
+    return { jql, tickets: [], error: err.message || String(err) };
+  }
 }
 
 async function fetchContentTickets(currentAccountId, fieldIds){
   const jql = (fieldIds && fieldIds.contentJql) || DEFAULT_CONTENT_JQL;
   const fields = [
-    'summary', 'status', 'assignee', 'duedate', 'priority',
+    'summary', 'status', 'assignee', 'duedate', 'created', 'priority',
     fieldIds.partnerField || DEFAULT_PARTNER_FIELD
   ];
   try{
     const issues = await jiraSearch(jql, fields, 50);
+    const keys = issues.map(i => i.key);
+    let raByParent = {};
+    let subPresenceByParent = {};
+    let handoffByKey = {};
+    if(keys.length){
+      try{
+        // Subtask / RA presence for Progress chips + soft red-flag gate (no RA description).
+        const subsByParent = await fetchSubtasksForParents(keys, currentAccountId, false);
+        Object.keys(subsByParent).forEach(pk => {
+          const list = subsByParent[pk] || [];
+          subPresenceByParent[pk] = list.length > 0;
+          raByParent[pk] = list.some(st => st && st.type === 'RA');
+        });
+      } catch(subErr){
+        console.warn('[jira] CONTENT subtask probe failed:', subErr.message || subErr);
+      }
+      try{
+        // Prefer WDW-* → CONTENT-* Key change timestamp for soft check-in clock.
+        handoffByKey = await fetchContentHandoffByKeys(keys);
+      } catch(handErr){
+        console.warn('[jira] CONTENT handoff changelog fetch failed:', handErr.message || handErr);
+      }
+    }
     return {
       jql,
-      tickets: issues.map(i => mapContentTicket(i, currentAccountId, fieldIds))
+      tickets: issues.map(i => {
+        const mapped = mapContentTicket(i, currentAccountId, fieldIds);
+        mapped.hasRa = !!raByParent[i.key];
+        mapped.hasSubtasks = !!subPresenceByParent[i.key];
+        const handoff = handoffByKey[i.key];
+        if(handoff && handoff.date){
+          mapped.handoffDate = handoff.date;
+          mapped.handoffSource = handoff.source || 'key-change';
+        } else if(mapped.createdDate){
+          // Documented fallback when Key change not found in changelog.
+          mapped.handoffDate = mapped.createdDate;
+          mapped.handoffSource = 'created-fallback';
+        }
+        return mapped;
+      })
     };
   } catch(err){
     // CONTENT project may be unavailable for some tokens — keep WDW board working.
@@ -272,7 +429,7 @@ async function fetchSubtasksForParents(keys, currentAccountId, includeRaDescript
   const all = [];
   for(const chunk of chunks){
     const jql = 'parent in (' + chunk.join(',') + ')';
-    const fields = ['summary','status','assignee','created','resolutiondate','description','parent'];
+    const fields = ['summary','status','assignee','created','duedate','resolutiondate','description','parent'];
     const issues = await jiraSearch(jql, fields, 200);
     all.push(...issues);
   }
@@ -282,63 +439,79 @@ async function fetchSubtasksForParents(keys, currentAccountId, includeRaDescript
 /** How many newest comments to scan per parent for Waiting / Partner signals. */
 const COMMENT_SCAN_MAX = 25;
 
+/** Newest comment wins; "clear" beats stale block language in older comments. */
+function commentLineIsClear(low){
+  return /(?:no\s+longer\s+blocked|unblocked|cleared|clear\s+to\s+(?:publish|release|go))/.test(low)
+    || /(?:ready\s+(?:for\s+)?(?:release|publish|go\s+live|media)|good\s+to\s+go)/.test(low)
+    || /(?:resolved|all\s+set|we(?:'re|\s+are)\s+good)/.test(low)
+    || /(?:approved|merged|no\s+action\s+needed|nothing\s+blocking)/.test(low)
+    || /(?:blocker\s+)?(?:removed|lifted)/.test(low)
+    || /(?:images?|assets?|photos?)\s+(?:received|uploaded|added|in\s+jira|attached)/.test(low)
+    || /(?:received|got|have)\s+(?:the\s+)?(?:images?|assets?|photos?)/.test(low)
+    || /no\s+longer\s+waiting\s+(?:for|on)\s+(?:images?|assets?|photos?|partner)/.test(low)
+    || /(?:partner|dakota)\s+(?:sent|provided|delivered|uploaded)/.test(low);
+}
+
+function commentLineIsBlock(low){
+  const waitingOnImages = /waiting\s+(?:for|on)\s+(?:the\s+)?(?:images?|assets?|photos?)/.test(low)
+    || /(?:need(?:s|ed)?|awaiting)\s+(?:images?|assets?|photos?)\s+(?:from|before)/.test(low)
+    || /(?:images?|assets?|photos?)\s+from\s+(?:partner|dakota)/.test(low)
+    || /from\s+partner\s+(?:before|for)\b/.test(low)
+    || /(?:have|get|need)\s+(?:photos?|images?|assets?)\s+sent/.test(low)
+    || /once\s+(?:the\s+)?(?:images?|photos?|assets?)\s+(?:are\s+)?added/.test(low)
+    || /(?:note|ask(?:ing)?|asked)\s+to\s+partner.*(?:photos?|images?|assets?)/.test(low)
+    || /partner.*(?:photos?|images?|assets?).*(?:sent|add|deliver)/.test(low)
+    || /(?:photos?|images?|assets?).*(?:from|to)\s+partner/.test(low)
+    || (/sent\s+note\s+to\s+partner/.test(low) && /(?:photos?|images?|assets?)/.test(low));
+
+  const dateAdjusted = /(?:due|date)\s+(?:was\s+)?(?:adjusted|pushed|moved|changed|shifted)/.test(low)
+    || /(?:adjusted|pushed|moved|changed|shifted)\s+(?:the\s+)?(?:due\s+)?date/.test(low)
+    || /date\s+(?:adjustment|change|push)/.test(low);
+
+  const releaseBlock = /blocked\s+(?:on|by)\b/.test(low)
+    || /holding\s+(?:for|on)\s+(?:release|publish)/.test(low)
+    || /(?:can(?:'|no)?t|cannot)\s+publish/.test(low)
+    || /waiting\s+(?:for|on)\s+.*(?:before|until)\s+(?:release|publish)/.test(low)
+    || /(?:release|publish)\s+(?:blocked|on\s+hold)/.test(low);
+
+  const generalWait = /waiting\s+(?:for|on)\b/.test(low)
+    || /holding\s+(?:for|on)\b/.test(low)
+    || /still\s+need(?:s|ed)?\b/.test(low);
+
+  if(!waitingOnImages && !dateAdjusted && !releaseBlock && !generalWait) return null;
+  return { waitingOnImages, dateAdjusted, releaseBlock };
+}
+
 /**
- * Heuristics over recent comment text (case-insensitive) for Solo Waiting lane.
- * v1: waiting for/on images|assets|photos; due/date adjusted|pushed|moved; general waiting-on.
- * Also catches Partner photo/image delivery phrasing (Turf Club-style notes).
+ * Heuristics over recent comments (newest first) for Solo Waiting lane.
  */
 function analyzeCommentSignals(commentTexts){
-  const joined = (commentTexts || []).filter(Boolean).join('\n').toLowerCase();
-  if(!joined.trim()){
-    return {
-      waitingOnOthers: false,
-      waitingOnImages: false,
-      dateAdjusted: false,
-      waitingOnPartnerAssets: false,
-      matchSnippet: null
-    };
-  }
-
-  const waitingOnImages = /waiting\s+(?:for|on)\s+(?:the\s+)?(?:images?|assets?|photos?)/.test(joined)
-    || /(?:need(?:s|ed)?|awaiting)\s+(?:images?|assets?|photos?)\s+(?:from|before)/.test(joined)
-    || /(?:images?|assets?|photos?)\s+from\s+(?:partner|dakota)/.test(joined)
-    || /from\s+partner\s+(?:before|for)\b/.test(joined)
-    // Turf Club-style: "have photos sent… once the images are added"
-    || /(?:have|get|need)\s+(?:photos?|images?|assets?)\s+sent/.test(joined)
-    || /once\s+(?:the\s+)?(?:images?|photos?|assets?)\s+(?:are\s+)?added/.test(joined)
-    || /(?:note|ask(?:ing)?|asked)\s+to\s+partner.*(?:photos?|images?|assets?)/.test(joined)
-    || /partner.*(?:photos?|images?|assets?).*(?:sent|add|deliver)/.test(joined)
-    || /(?:photos?|images?|assets?).*(?:from|to)\s+partner/.test(joined)
-    || /sent\s+note\s+to\s+partner/.test(joined) && /(?:photos?|images?|assets?)/.test(joined);
-
-  const dateAdjusted = /(?:due|date)\s+(?:was\s+)?(?:adjusted|pushed|moved|changed|shifted)/.test(joined)
-    || /(?:adjusted|pushed|moved|changed|shifted)\s+(?:the\s+)?(?:due\s+)?date/.test(joined)
-    || /date\s+(?:adjustment|change|push)/.test(joined);
-
-  const waitingOn = /waiting\s+(?:for|on)\b/.test(joined)
-    || /blocked\s+(?:on|by)\b/.test(joined)
-    || /holding\s+(?:for|on)\b/.test(joined)
-    || /still\s+need(?:s|ed)?\b/.test(joined);
-
-  const waitingOnOthers = waitingOnImages || dateAdjusted || waitingOn;
-  const waitingOnPartnerAssets = waitingOnImages;
-
-  let matchSnippet = null;
-  if(waitingOnOthers){
-    const source = (commentTexts || []).find(t => {
-      const low = String(t || '').toLowerCase();
-      return /waiting\s+(?:for|on)|blocked\s+(?:on|by)|(?:due|date).*(?:adjusted|pushed|moved)|(?:images?|assets?|photos?)|partner/.test(low);
-    }) || commentTexts[0];
-    matchSnippet = String(source || '').replace(/\s+/g, ' ').trim().slice(0, 140) || null;
-  }
-
-  return {
-    waitingOnOthers,
-    waitingOnImages,
-    dateAdjusted,
-    waitingOnPartnerAssets,
-    matchSnippet
+  const empty = {
+    waitingOnOthers: false,
+    waitingOnImages: false,
+    dateAdjusted: false,
+    waitingOnPartnerAssets: false,
+    matchSnippet: null
   };
+  const texts = (commentTexts || []).filter(Boolean);
+  if(!texts.length) return empty;
+
+  for(let i = 0; i < texts.length; i++){
+    const low = String(texts[i]).toLowerCase();
+    if(commentLineIsClear(low)) return empty;
+    const block = commentLineIsBlock(low);
+    if(block){
+      const snippet = String(texts[i]).replace(/\s+/g, ' ').trim().slice(0, 140) || null;
+      return {
+        waitingOnOthers: true,
+        waitingOnImages: block.waitingOnImages,
+        dateAdjusted: block.dateAdjusted,
+        waitingOnPartnerAssets: block.waitingOnImages,
+        matchSnippet: snippet
+      };
+    }
+  }
+  return empty;
 }
 
 function commentBodyToText(body){
@@ -484,14 +657,18 @@ async function fetchJiraData(){
   const activeKeys = activeIssues.map(i => i.key);
   const closedKeys = closedIssues.map(i => i.key);
 
-  const [activeSubs, closedSubs, contentResult, commentsResult] = await Promise.all([
+  const [activeSubs, closedSubs, contentResult, commentsResult, msSoloResult] = await Promise.all([
     fetchSubtasksForParents(activeKeys, currentAccountId, true),
     fetchSubtasksForParents(closedKeys, currentAccountId, false),
     fetchContentTickets(currentAccountId, fieldIds),
-    fetchCommentsForParents(activeKeys)
+    fetchCommentsForParents(activeKeys),
+    fetchMsSoloTickets(currentAccountId, fieldIds)
   ]);
 
   const commentSignalsByKey = (commentsResult && commentsResult.byKey) || {};
+  const commentsWarning = (commentsResult && commentsResult.error)
+    || (msSoloResult && msSoloResult.commentsWarning)
+    || null;
 
   return {
     currentUserFirstName,
@@ -499,6 +676,7 @@ async function fetchJiraData(){
     recentlyClosedTickets: closedIssues.map(i => mapClosedTicket(i, closedSubs, currentAccountId)),
     contentTickets: contentResult.tickets || [],
     contentJql: contentResult.jql || DEFAULT_CONTENT_JQL,
-    commentsWarning: (commentsResult && commentsResult.error) || null
+    msSoloTickets: (msSoloResult && msSoloResult.tickets) || [],
+    commentsWarning
   };
 }

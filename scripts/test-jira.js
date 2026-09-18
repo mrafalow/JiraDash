@@ -107,14 +107,14 @@ function urlOnOrigin(pathname){
   return new URL(origin + path);
 }
 
-function wantsScopedGateway(){
-  if(process.env.JIRA_USE_SITE_API === '1' || process.env.JIRA_USE_SITE_API === 'true') return false;
-  if(process.env.JIRA_USE_SCOPED_GATEWAY === '1' || process.env.JIRA_USE_SCOPED_GATEWAY === 'true') return true;
-  return !!cloudId;
+function useSiteApiOnly(){
+  return process.env.JIRA_USE_SITE_API === '1' || process.env.JIRA_USE_SITE_API === 'true';
 }
 
 (async function main(){
-  if(!cloudId && baseUrl && wantsScopedGateway()){
+  // Always try tenant_info when cloudId unset (unless site-only). Previously
+  // gated on wantsScopedGateway() which required cloudId already — dead path.
+  if(!cloudId && baseUrl && !useSiteApiOnly()){
     const id = await fetchTenantCloudId();
     if(id){
       cloudId = String(id).trim();
