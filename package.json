@@ -1,0 +1,17 @@
+{
+  "name": "jira-dash",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Studio Titan — Jira dashboard for ranked solo work",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test:jira": "node scripts/test-jira.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7"
+  }
+}
