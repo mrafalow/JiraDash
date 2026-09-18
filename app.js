@@ -434,7 +434,7 @@ function renderHorizonPanel(){
     if(hasContent) classes.push('has-due-content');
     if(isToday) classes.push('is-today');
     if(isSelected) classes.push('is-selected');
-    const visible = due.slice(0, 2);
+    const visible = due.slice(0, 1);
     const overflow = due.length - visible.length;
     const chips = visible.map(t => {
       const kind = isContentTicket(t) ? 'content' : 'own';
