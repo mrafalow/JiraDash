@@ -233,6 +233,11 @@ function isContentTicket(t){
   return !!(t && t.key && String(t.key).toUpperCase().startsWith('CONTENT-'));
 }
 
+function shortHorizonTicketKey(key){
+  if(!key) return '';
+  return String(key).replace(/^WDW-/i, 'W').replace(/^CONTENT-/i, 'MS');
+}
+
 /** Active WDW/own + CONTENT delivery rows for due calendar / horizon list. */
 function horizonSourceTickets(){
   const active = (STATE.data && STATE.data.activeTickets) || [];
@@ -308,13 +313,16 @@ function bindHorizonInteractions(){
         renderHorizonPanel();
       });
     });
+    root.querySelectorAll('.cal-day-chip').forEach(el => {
+      el.addEventListener('click', (e) => e.stopPropagation());
+    });
   }
   const showAll = document.getElementById('horizonShowAll');
   if(showAll){
-    showAll.addEventListener('click', () => {
+    showAll.onclick = () => {
       STATE.horizonFilterDay = null;
       renderHorizonPanel();
-    });
+    };
   }
 }
 
@@ -322,9 +330,10 @@ function renderHorizonListItems(listTickets){
   return '<div class="horizon-list">'+listTickets.map((t, i) => {
     const due = horizonDueLabel(t.dueDate);
     const tLink = jiraLink(t.key);
+    const shortKey = shortHorizonTicketKey(t.key);
     const keyHtml = tLink
-      ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+escapeHtml(t.key)+'</a>'
-      : escapeHtml(t.key);
+      ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+escapeHtml(shortKey)+'</a>'
+      : escapeHtml(shortKey);
     const kind = isContentTicket(t) ? 'content' : 'own';
     return '<div class="horizon-item kind-'+kind+'">' +
       '<div class="horizon-rank">'+(i+1)+'</div>' +
@@ -377,28 +386,40 @@ function renderHorizonPanel(){
     if(hasContent) classes.push('has-due-content');
     if(isToday) classes.push('is-today');
     if(isSelected) classes.push('is-selected');
-    const marks = [];
-    if(hasOwn) marks.push('<span class="cal-day-mark mark-own" title="WDW / own"></span>');
-    if(hasContent) marks.push('<span class="cal-day-mark mark-content" title="CONTENT"></span>');
+    const visible = due.slice(0, 2);
+    const overflow = due.length - visible.length;
+    const chips = visible.map(t => {
+      const kind = isContentTicket(t) ? 'content' : 'own';
+      const label = shortHorizonTicketKey(t.key);
+      const link = jiraLink(t.key);
+      if(link){
+        return '<a class="cal-day-chip kind-'+kind+' jira-link" href="'+escapeAttr(link)+'" target="_blank" rel="noopener">'+escapeHtml(label)+'</a>';
+      }
+      return '<span class="cal-day-chip kind-'+kind+'">'+escapeHtml(label)+'</span>';
+    }).join('');
+    const overflowHtml = overflow > 0
+      ? '<span class="cal-day-more">+'+overflow+' more</span>'
+      : '';
     cells.push(
-      '<button type="button" class="'+classes.join(' ')+'" data-day-key="'+escapeAttr(key)+'"'+(title ? ' title="'+escapeAttr(title)+'"' : '')+' aria-pressed="'+(isSelected ? 'true' : 'false')+'">' +
+      '<div class="'+classes.join(' ')+'" data-day-key="'+escapeAttr(key)+'" role="button" tabindex="0"'+(title ? ' title="'+escapeAttr(title)+'"' : '')+' aria-pressed="'+(isSelected ? 'true' : 'false')+'">' +
         '<span class="cal-day-num">'+day+'</span>' +
-        (marks.length ? '<span class="cal-day-marks">'+marks.join('')+'</span>' : '') +
-      '</button>'
+        (chips || overflowHtml ? '<span class="cal-day-chips">'+chips+overflowHtml+'</span>' : '') +
+      '</div>'
     );
   }
 
   const todayNote = dueToday.length
     ? '<div class="cal-today-note"><b>'+dueToday.length+'</b> due today — '+dueToday.map(t => {
         const link = jiraLink(t.key);
-        return link ? '<a class="jira-link" href="'+link+'" target="_blank" rel="noopener">'+escapeHtml(t.key)+'</a>' : escapeHtml(t.key);
+        const sk = shortHorizonTicketKey(t.key);
+        return link ? '<a class="jira-link" href="'+link+'" target="_blank" rel="noopener">'+escapeHtml(sk)+'</a>' : escapeHtml(sk);
       }).join(', ')+'</div>'
     : '<div class="cal-today-note empty">Nothing due today</div>';
 
   const legend =
     '<div class="cal-legend">' +
-      '<span class="cal-legend-item"><span class="cal-day-mark mark-own"></span> WDW / own</span>' +
-      '<span class="cal-legend-item"><span class="cal-day-mark mark-content"></span> CONTENT</span>' +
+      '<span class="cal-legend-item"><span class="cal-day-mark mark-own"></span> WDW</span>' +
+      '<span class="cal-legend-item"><span class="cal-day-mark mark-content"></span> MS</span>' +
     '</div>';
 
   document.getElementById('dueCalendar').innerHTML =
@@ -427,7 +448,7 @@ function renderHorizonPanel(){
   if(!listTickets.length){
     document.getElementById('horizonList').innerHTML = filterDay
       ? '<div class="horizon-empty">No launches due on '+escapeHtml(filterLabel)+'</div>'
-      : '<div class="horizon-empty">No upcoming due dates on Active or CONTENT tickets</div>';
+      : '<div class="horizon-empty">No upcoming due dates on WDW or MS tickets</div>';
   } else {
     document.getElementById('horizonList').innerHTML = renderHorizonListItems(listTickets);
   }
