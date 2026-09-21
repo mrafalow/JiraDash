@@ -73,6 +73,62 @@ function renderMsStallCard(t){
   '</div>';
 }
 
+/** PR review card — open PR assigned to you; urgency from 1-day SLA. */
+function renderPrReviewCard({t, pr}){
+  const reason = prReviewReason(pr);
+  const dueLabel = prReviewDueLabel(pr);
+  const days = prReviewDaysUntilDue(pr);
+  const urgent = typeof days === 'number' && days <= 0;
+  const bandColor = urgent ? 'var(--band-red)' : 'var(--band-orange)';
+  const bandBg = urgent ? 'var(--band-red-bg)' : 'var(--band-orange-bg)';
+  const priorityShort = (t.priority || '').replace(/^\d+ - /,'');
+  const isExpanded = STATE.expandedKeys.has(t.key);
+  const tLink = jiraLink(t.key);
+  const prLink = jiraLink(pr && pr.key);
+  const summaryHtml = tLink
+    ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+escapeHtml(t.summary || t.key)+'</a>'
+    : escapeHtml(t.summary || t.key);
+  const prKeyHtml = prLink
+    ? '<a class="jira-link" href="'+prLink+'" target="_blank" rel="noopener">'+escapeHtml(pr.key || 'PR')+'</a>'
+    : escapeHtml((pr && pr.key) || 'PR');
+
+  const subtaskRows = (t.subtasks || []).map(st => {
+    const color = st.status === 'Closed' ? 'var(--green)' : (st.assigneeIsCurrentUser === false ? 'var(--band-orange)' : 'var(--band-blue)');
+    const label = STAGE_LABELS[st.type] || st.type;
+    const stLink = jiraLink(st.key);
+    const labelHtml = stLink ? '<a class="jira-link" href="'+stLink+'" target="_blank" rel="noopener">'+label+'</a>' : label;
+    const isThisPr = pr && st.key === pr.key;
+    let tagText = st.status === 'Closed' ? 'Done' : (st.assigneeIsCurrentUser === false ? 'Waiting on ' + (st.assigneeName || 'other') : 'In progress');
+    if(isThisPr && st.status !== 'Closed') tagText = 'Your review · 1-day SLA';
+    return '<div class="subtask-row'+(isThisPr ? ' pr-review-row' : '')+'">' +
+      '<span class="status-dot" style="background:'+color+'"></span>' +
+      '<span class="subtask-type">'+labelHtml+'</span>' +
+      '<span class="subtask-tag">'+tagText+'</span>' +
+      '<span class="subtask-assignee">'+(st.assigneeName || '')+'</span>' +
+      '</div>';
+  }).join('');
+
+  return '<div class="ticket-card pr-review-card'+(isExpanded?' expanded':'')+(isManagedServicesTicket(t)?' ms-ticket':'')+'" style="--band-color:'+bandColor+'" data-key="'+escapeAttr(t.key)+'" data-pr-review="1">' +
+    '<div class="ticket-row" data-toggle="'+escapeAttr(t.key)+'">' +
+      '<div class="score-stack">' +
+        '<div class="score-badge" style="background:'+bandBg+';color:'+bandColor+'" title="PR review — 1-day SLA">PR</div>' +
+        '<span class="pr-badge" title="Peer review assigned to you">Review</span>' +
+        msBadgeHtml(t) +
+      '</div>' +
+      '<div class="ticket-main">' +
+        '<div class="ticket-summary">'+summaryHtml+'</div>' +
+        '<div class="ticket-tag">'+escapeHtml(reason)+' · '+prKeyHtml+'</div>' +
+      '</div>' +
+      '<div class="ticket-meta">' +
+        '<div class="meta-col">Review<div class="val">'+escapeHtml(dueLabel)+'</div></div>' +
+        (priorityShort ? '<div class="priority-chip" style="background:'+bandBg+';color:'+bandColor+'">'+escapeHtml(priorityShort)+'</div>' : '') +
+      '</div>' +
+      '<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg>' +
+    '</div>' +
+    (isExpanded ? '<div class="subtask-list">'+subtaskRows+'</div>' : '') +
+  '</div>';
+}
+
 function bindMsStallOpen(container){
   container.querySelectorAll('[data-ms-stall-open]').forEach(el => {
     el.addEventListener('click', (e) => {
@@ -200,8 +256,9 @@ function renderTicketList(){
   const container = document.getElementById('ticketList');
   const tickets = soloSourceTickets();
   const msStalls = collectMsStallTickets(STATE.data);
+  const prReviews = collectPrReviewTickets(tickets);
   if(!tickets.length && !msStalls.length){
-    container.innerHTML = '<div class="empty-state"><b>Nothing active right now</b>New requests will show up here the moment they are assigned to you.</div>';
+    container.innerHTML = '<div class="empty-state"><b>Nothing in focus right now</b>New requests will show up here the moment they are assigned to you.</div>';
     return;
   }
   const scored = tickets.map(t => {
@@ -213,7 +270,7 @@ function renderTicketList(){
   }).sort((a,b) => b.scoring.score - a.scoring.score);
 
   // Dual-list: Attention+Waiting OK; Waiting+Action only when not Needs Attention.
-  const byLane = { attention: [], action: [], waiting: [] };
+  const byLane = { attention: [], action: [], waiting: [], 'pr-reviews': [] };
   scored.forEach(item => {
     (item.lanes || [item.lane]).forEach(laneId => {
       (byLane[laneId] || byLane.action).push(item);
@@ -225,6 +282,9 @@ function renderTicketList(){
   byLane.attention = byLane.attention.filter(item => !stallKeys.has(item.t.key));
   const stallItems = msStalls.map(t => ({ t, msStall: true }));
 
+  // PR reviews lane — dedicated list; omit section when empty. Still dual-list in other lanes.
+  byLane['pr-reviews'] = prReviews;
+
   const commentsWarning = STATE.data && STATE.data.commentsWarning
     ? '<div class="comments-warning" role="status">'+escapeHtml(STATE.data.commentsWarning)+'</div>'
     : '';
@@ -232,6 +292,7 @@ function renderTicketList(){
   container.innerHTML = commentsWarning + SOLO_LANES.map(lane => {
     const scoredItems = byLane[lane.id] || [];
     const items = lane.id === 'attention' ? stallItems.concat(scoredItems) : scoredItems;
+    if(lane.omitIfEmpty && !items.length) return '';
     let cards;
     if(!items.length){
       cards = lane.id === 'waiting'
@@ -241,6 +302,8 @@ function renderTicketList(){
       cards = items.map(renderWaitingNudgeCard).join('');
     } else if(lane.id === 'attention'){
       cards = items.map(item => item.msStall ? renderMsStallCard(item.t) : renderTicketCard(item)).join('');
+    } else if(lane.id === 'pr-reviews'){
+      cards = items.map(item => renderPrReviewCard(item)).join('');
     } else {
       cards = items.map(renderTicketCard).join('');
     }
@@ -618,12 +681,12 @@ function ensureSoloView(){
   if(soloNav && !soloNav.classList.contains('active')) soloNav.click();
 }
 
-/** Prefer Needs Attention, then Waiting, then Action when dual-listed. */
+/** Prefer Needs Attention, then PR reviews, then Waiting, then Action when dual-listed. */
 function findSoloTicketCard(key){
   if(!key) return null;
   const list = document.getElementById('ticketList');
   if(!list) return null;
-  const laneOrder = ['attention', 'waiting', 'action'];
+  const laneOrder = ['attention', 'pr-reviews', 'waiting', 'action'];
   for(let i = 0; i < laneOrder.length; i++){
     const lane = list.querySelector('.solo-lane[data-lane="'+laneOrder[i]+'"]');
     if(!lane) continue;

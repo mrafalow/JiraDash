@@ -152,7 +152,17 @@
   .lane-hint{font-size:12px;color:var(--text-tertiary);margin-bottom:10px;}
   .lane-empty{font-size:13px;color:var(--text-tertiary);padding:10px 4px 4px;border-top:1px dashed var(--panel-border);}
   .solo-lane[data-lane="attention"] .lane-title{color:var(--band-red);}
+  .solo-lane[data-lane="pr-reviews"] .lane-title{color:var(--band-orange);}
   .solo-lane[data-lane="waiting"] .lane-title{color:var(--band-orange);}
+
+  .pr-badge{
+    font-size:9px;font-weight:700;letter-spacing:.04em;line-height:1;
+    padding:3px 6px;border-radius:4px;white-space:nowrap;
+    background:var(--band-orange-bg);color:var(--band-orange);
+    border:1px solid rgba(251,146,60,.4);
+  }
+  .pr-review-card .ticket-tag .jira-link{font-weight:600;}
+  .subtask-row.pr-review-row{background:rgba(251,146,60,.06);}
 
   /* ---------- CONTENT DELIVERY (footer) ---------- */
   .content-hint{font-size:12px;color:var(--text-tertiary);margin:-2px 0 12px;}
@@ -281,7 +291,7 @@
   .empty-state{background:var(--panel);border:1px solid var(--panel-border);border-radius:var(--radius-md);padding:40px 30px;text-align:center;color:var(--text-secondary);font-size:14px;}
   .empty-state b{color:var(--text-primary);display:block;font-size:16px;margin-bottom:6px;font-family:var(--font-display);}
 
-  /* ---------- METRICS STRIP (Solo Work, under greeting) ---------- */
+  /* ---------- METRICS STRIP (In Focus, under greeting) ---------- */
   .metrics-strip-block{margin-bottom:22px;}
   .bottom-strip{display:grid;grid-template-columns:auto 1fr 1fr 1fr 1fr;gap:14px;align-items:stretch;}
   .strip-card{background:var(--panel);border:1px solid var(--panel-border);border-radius:var(--radius-md);padding:18px 20px;min-width:0;}

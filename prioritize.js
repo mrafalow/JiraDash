@@ -290,11 +290,18 @@ function doNotPublishEarlyFromText(text){
 }
 
 /**
- * Solo Work lanes — urgency drives Needs Attention; Waiting never blocks it.
+ * In Focus lanes — urgency drives Needs Attention; Waiting never blocks it.
  * Dual lists: Attention+Waiting OK; Waiting+Action only when not Needs Attention.
+ * PR reviews lane sits between Attention and Action; omitted when empty.
  */
 const SOLO_LANES = [
   { id: 'attention', title: 'Needs Attention', hint: 'Due soon or high urgency' },
+  {
+    id: 'pr-reviews',
+    title: 'PR reviews (1-day)',
+    hint: 'Open PR subtasks assigned to you — 1 business day turnaround',
+    omitIfEmpty: true
+  },
   { id: 'action', title: 'My Action Items', hint: 'Yours to work — waiting items stay here unless urgent' },
   { id: 'waiting', title: 'Waiting on Others', hint: 'PR: overdue or past expected only. Other stages: due soon too. Partner/images: while craft is open and comments still block.' }
 ];
@@ -302,6 +309,11 @@ const DUE_SOON_DAYS = 2;
 /** Subtask Jira due within this many business days → Waiting nudge (incl. PR). */
 const SUBTASK_DUE_SOON_DAYS = 2;
 const ATTENTION_SCORE_MIN = 50;
+/**
+ * Assigned-to-me PR review SLA (business days).
+ * Config PR_TURNAROUND covers pipeline timing; this lane uses a fixed 1-day reviewer SLA.
+ */
+const PR_REVIEW_TURNAROUND_DAYS = 1;
 
 /**
  * Soft red-flag: still with MS, no progress action, this many calendar days
@@ -479,6 +491,73 @@ function collectMsStallTickets(data){
       if(da !== db) return da - db;
       return String(a.key || '').localeCompare(String(b.key || ''));
     });
+}
+
+/** Open PR subtask assigned to the current user (peer review for you). */
+function findOpenPrAssignedToMe(ticket){
+  if(!ticket) return null;
+  const open = (ticket.subtasks || []).filter(st =>
+    st && st.type === 'PR' && st.status !== 'Closed' && st.assigneeIsCurrentUser === true
+  );
+  if(!open.length) return null;
+  // Prefer oldest open PR when multiple exist.
+  return open.slice().sort((a, b) => {
+    const ta = a.createdDate ? atMidnight(a.createdDate).getTime() : Number.POSITIVE_INFINITY;
+    const tb = b.createdDate ? atMidnight(b.createdDate).getTime() : Number.POSITIVE_INFINITY;
+    if(ta !== tb) return ta - tb;
+    return String(a.key || '').localeCompare(String(b.key || ''));
+  })[0];
+}
+
+function prReviewExpectedBy(prSubtask){
+  if(!prSubtask || !prSubtask.createdDate) return null;
+  return addBusinessDays(atMidnight(prSubtask.createdDate), PR_REVIEW_TURNAROUND_DAYS);
+}
+
+/** Business days until (or past) the 1-day PR review SLA. */
+function prReviewDaysUntilDue(prSubtask){
+  const expected = prReviewExpectedBy(prSubtask);
+  if(!expected) return null;
+  return businessDaysBetween(todayMid(), expected);
+}
+
+function prReviewReason(prSubtask){
+  const days = prReviewDaysUntilDue(prSubtask);
+  if(days == null) return 'PR assigned to you — review (1-day SLA)';
+  if(days < 0) return 'PR review overdue · ' + Math.abs(days) + 'd past 1-day SLA';
+  if(days === 0) return 'PR review due today · 1-day turnaround';
+  return 'PR review due in ' + days + 'd · 1-day turnaround';
+}
+
+function prReviewDueLabel(prSubtask){
+  const days = prReviewDaysUntilDue(prSubtask);
+  if(days == null) return '—';
+  if(days === 0) return 'Today';
+  if(days < 0) return Math.abs(days) + 'd overdue';
+  return 'In ' + days + 'd';
+}
+
+/**
+ * Parents with an open PR subtask assigned to current user.
+ * Sorted by review SLA urgency (most overdue / soonest first).
+ */
+function collectPrReviewTickets(tickets){
+  const list = (tickets || [])
+    .map(t => {
+      const pr = findOpenPrAssignedToMe(t);
+      if(!pr) return null;
+      return { t, pr, daysUntilReviewDue: prReviewDaysUntilDue(pr) };
+    })
+    .filter(Boolean);
+  return list.sort((a, b) => {
+    const da = typeof a.daysUntilReviewDue === 'number' ? a.daysUntilReviewDue : Number.POSITIVE_INFINITY;
+    const db = typeof b.daysUntilReviewDue === 'number' ? b.daysUntilReviewDue : Number.POSITIVE_INFINITY;
+    if(da !== db) return da - db;
+    const ta = a.pr.createdDate ? atMidnight(a.pr.createdDate).getTime() : Number.POSITIVE_INFINITY;
+    const tb = b.pr.createdDate ? atMidnight(b.pr.createdDate).getTime() : Number.POSITIVE_INFINITY;
+    if(ta !== tb) return ta - tb;
+    return String(a.t.key || '').localeCompare(String(b.t.key || ''));
+  });
 }
 
 /** Blocker “why” labels for Waiting nudge cards (standup rule 5). */

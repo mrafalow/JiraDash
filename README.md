@@ -1,6 +1,6 @@
 # JiraDash — Studio Titan
 
-Local Jira dashboard that ranks your WDW solo work by attention score.
+Local Jira dashboard that ranks your WDW In Focus work by attention score.
 
 ## Quick start
 
