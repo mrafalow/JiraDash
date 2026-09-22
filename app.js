@@ -116,6 +116,9 @@ function renderPrReviewCard({t, pr}){
       '<div class="ticket-main">' +
         '<div class="ticket-summary">'+summaryHtml+'</div>' +
         '<div class="ticket-tag">'+escapeHtml(reason)+' · '+prKeyHtml+'</div>' +
+        (t.reporterName
+          ? '<div class="ticket-tag pr-reported-by">Reported by '+escapeHtml(t.reporterName)+'</div>'
+          : '') +
       '</div>' +
       '<div class="ticket-meta">' +
         '<div class="meta-col">Review<div class="val">'+escapeHtml(dueLabel)+'</div></div>' +

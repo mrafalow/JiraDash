@@ -85,6 +85,14 @@ function mapAssignee(fields, currentAccountId){
   };
 }
 
+/** Parent reporter display name (for PR reviews “Reported by”). */
+function mapReporterName(fields){
+  const r = fields && fields.reporter;
+  if(!r) return null;
+  const name = r.displayName || r.name || null;
+  return name ? String(name) : null;
+}
+
 /** Discovered via /rest/api/3/field (name "Partner"). Override with JIRA_PARTNER_FIELD in .env. */
 const DEFAULT_PARTNER_FIELD = 'customfield_10329';
 /** Publish Early radio — already used historically as customfield_10182. */
@@ -210,6 +218,7 @@ function mapActiveTicket(issue, subtasksByParent, currentAccountId, fieldIds, co
     status: mapStatusName(f),
     assigneeName: assignee.assigneeName,
     assigneeIsCurrentUser: assignee.assigneeIsCurrentUser,
+    reporterName: mapReporterName(f),
     createdDate: datePrefix(f.created),
     dueDate: datePrefix(f.duedate),
     partner: partnerValue(f, ids.partnerField),
@@ -331,7 +340,7 @@ async function fetchMsSoloTickets(currentAccountId, fieldIds){
     'summary', 'priority', 'duedate', 'created', 'status', 'description',
     fieldIds.publishEarlyField || DEFAULT_PUBLISH_EARLY_FIELD,
     fieldIds.partnerField || DEFAULT_PARTNER_FIELD,
-    'assignee'
+    'assignee', 'reporter'
   ];
   try{
     const issues = await jiraSearch(jql, parentFields, 50);
@@ -479,7 +488,7 @@ async function fetchPrReviewTickets(currentAccountId, fieldIds, knownParentKeys)
       'summary', 'priority', 'duedate', 'created', 'status', 'description',
       fieldIds.publishEarlyField || DEFAULT_PUBLISH_EARLY_FIELD,
       fieldIds.partnerField || DEFAULT_PARTNER_FIELD,
-      'assignee'
+      'assignee', 'reporter'
     ];
     const parentIssues = await jiraSearch(
       'key in (' + missingParentKeys.join(',') + ')',
@@ -696,7 +705,7 @@ async function fetchJiraData(){
   const parentFields = [
     'summary','priority','duedate','created','status','description',
     fieldIds.publishEarlyField, fieldIds.partnerField,
-    'resolutiondate','assignee'
+    'resolutiondate','assignee','reporter'
   ];
 
   let activeIssues;

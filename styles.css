@@ -164,6 +164,7 @@
     border:1px solid rgba(197,202,214,.4);
   }
   .pr-review-card .ticket-tag .jira-link{font-weight:600;}
+  .pr-review-card .pr-reported-by{margin-top:2px;color:var(--text-tertiary);}
   .subtask-row.pr-review-row{background:rgba(197,202,214,.08);}
   .pr-review-card .score-badge{font-size:15px;letter-spacing:.02em;}
 
