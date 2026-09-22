@@ -436,6 +436,94 @@ async function fetchSubtasksForParents(keys, currentAccountId, includeRaDescript
   return groupByParent(all, currentAccountId, includeRaDescription);
 }
 
+/**
+ * Open PR subtasks assigned to currentUser → parents for In Focus → PR reviews.
+ * Needed when Marcin is PR assignee but not parent assignee/reporter (activeTickets miss).
+ * Returns parents not already in knownParentKeys, plus all matching PR subtask keys
+ * (so callers can force assigneeIsCurrentUser on tickets already on the board).
+ */
+async function fetchPrReviewTickets(currentAccountId, fieldIds, knownParentKeys){
+  const jql =
+    '(project = WDW OR project = CONTENT) AND assignee = currentUser() AND issuetype = Sub-task AND statusCategory != Done ORDER BY created ASC';
+  const known = knownParentKeys instanceof Set
+    ? knownParentKeys
+    : new Set(knownParentKeys || []);
+  try{
+    const subIssues = await jiraSearch(
+      jql,
+      ['summary', 'status', 'assignee', 'created', 'duedate', 'resolutiondate', 'parent'],
+      50
+    );
+    const prMine = (subIssues || []).filter(issue =>
+      classifySubtaskType(issue.fields && issue.fields.summary) === 'PR'
+    );
+    if(!prMine.length){
+      return { jql, tickets: [], prSubtaskKeys: [] };
+    }
+
+    const prSubtaskKeys = prMine.map(i => i.key).filter(Boolean);
+    const missingParentKeys = [];
+    const seenParent = new Set();
+    prMine.forEach(issue => {
+      const pk = issue.fields && issue.fields.parent && issue.fields.parent.key;
+      if(!pk || seenParent.has(pk)) return;
+      seenParent.add(pk);
+      if(!known.has(pk)) missingParentKeys.push(pk);
+    });
+
+    if(!missingParentKeys.length){
+      return { jql, tickets: [], prSubtaskKeys };
+    }
+
+    const parentFields = [
+      'summary', 'priority', 'duedate', 'created', 'status', 'description',
+      fieldIds.publishEarlyField || DEFAULT_PUBLISH_EARLY_FIELD,
+      fieldIds.partnerField || DEFAULT_PARTNER_FIELD,
+      'assignee'
+    ];
+    const parentIssues = await jiraSearch(
+      'key in (' + missingParentKeys.join(',') + ')',
+      parentFields,
+      missingParentKeys.length
+    );
+    if(!parentIssues.length){
+      return { jql, tickets: [], prSubtaskKeys };
+    }
+
+    const keys = parentIssues.map(i => i.key);
+    const prKeySet = new Set(prSubtaskKeys);
+    const [subsByParent, commentsResult] = await Promise.all([
+      fetchSubtasksForParents(keys, currentAccountId, true),
+      fetchCommentsForParents(keys)
+    ]);
+    Object.keys(subsByParent).forEach(pk => {
+      (subsByParent[pk] || []).forEach(st => {
+        if(st && prKeySet.has(st.key)) st.assigneeIsCurrentUser = true;
+      });
+    });
+
+    const commentSignalsByKey = (commentsResult && commentsResult.byKey) || {};
+    const tickets = parentIssues.map(i => {
+      const mapped = mapActiveTicket(i, subsByParent, currentAccountId, fieldIds, commentSignalsByKey);
+      if(String(i.key || '').toUpperCase().startsWith('CONTENT-')){
+        mapped.managedServices = true;
+        mapped.scoringProfile = 'ms';
+      }
+      return mapped;
+    });
+
+    return {
+      jql,
+      tickets,
+      prSubtaskKeys,
+      commentsWarning: (commentsResult && commentsResult.error) || null
+    };
+  } catch(err){
+    console.warn('[jira] PR review parent fetch failed:', err.message || err);
+    return { jql, tickets: [], prSubtaskKeys: [], error: err.message || String(err) };
+  }
+}
+
 /** How many newest comments to scan per parent for Waiting / Partner signals. */
 const COMMENT_SCAN_MAX = 25;
 
@@ -665,9 +753,16 @@ async function fetchJiraData(){
     fetchMsSoloTickets(currentAccountId, fieldIds)
   ]);
 
+  const knownParentKeys = new Set(activeKeys);
+  ((msSoloResult && msSoloResult.tickets) || []).forEach(t => {
+    if(t && t.key) knownParentKeys.add(t.key);
+  });
+  const prReviewResult = await fetchPrReviewTickets(currentAccountId, fieldIds, knownParentKeys);
+
   const commentSignalsByKey = (commentsResult && commentsResult.byKey) || {};
   const commentsWarning = (commentsResult && commentsResult.error)
     || (msSoloResult && msSoloResult.commentsWarning)
+    || (prReviewResult && prReviewResult.commentsWarning)
     || null;
 
   return {
@@ -677,6 +772,10 @@ async function fetchJiraData(){
     contentTickets: contentResult.tickets || [],
     contentJql: contentResult.jql || DEFAULT_CONTENT_JQL,
     msSoloTickets: (msSoloResult && msSoloResult.tickets) || [],
+    // Parents with an open PR assigned to me that active/msSolo did not already cover.
+    prReviewTickets: (prReviewResult && prReviewResult.tickets) || [],
+    // All open PR subtask keys assigned to me (incl. parents already on the board).
+    prSubtaskKeys: (prReviewResult && prReviewResult.prSubtaskKeys) || [],
     commentsWarning
   };
 }

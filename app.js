@@ -73,14 +73,12 @@ function renderMsStallCard(t){
   '</div>';
 }
 
-/** PR review card — open PR assigned to you; urgency from 1-day SLA. */
+/** PR review card — open PR assigned to you; badge is always “PR” (light gray). */
 function renderPrReviewCard({t, pr}){
   const reason = prReviewReason(pr);
   const dueLabel = prReviewDueLabel(pr);
-  const days = prReviewDaysUntilDue(pr);
-  const urgent = typeof days === 'number' && days <= 0;
-  const bandColor = urgent ? 'var(--band-red)' : 'var(--band-orange)';
-  const bandBg = urgent ? 'var(--band-red-bg)' : 'var(--band-orange-bg)';
+  const bandColor = 'var(--band-pr)';
+  const bandBg = 'var(--band-pr-bg)';
   const priorityShort = (t.priority || '').replace(/^\d+ - /,'');
   const isExpanded = STATE.expandedKeys.has(t.key);
   const tLink = jiraLink(t.key);
@@ -256,8 +254,8 @@ function renderTicketList(){
   const container = document.getElementById('ticketList');
   const tickets = soloSourceTickets();
   const msStalls = collectMsStallTickets(STATE.data);
-  const prReviews = collectPrReviewTickets(tickets);
-  if(!tickets.length && !msStalls.length){
+  const prReviews = collectPrReviewTickets(prReviewSourceTickets(STATE.data));
+  if(!tickets.length && !msStalls.length && !prReviews.length){
     container.innerHTML = '<div class="empty-state"><b>Nothing in focus right now</b>New requests will show up here the moment they are assigned to you.</div>';
     return;
   }

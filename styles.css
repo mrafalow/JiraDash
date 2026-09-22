@@ -17,6 +17,8 @@
     --band-gold-bg:rgba(244,196,48,0.14);
     --band-blue:#4ea8f5;
     --band-blue-bg:rgba(78,168,245,0.14);
+    --band-pr:#c5cad6;
+    --band-pr-bg:rgba(197,202,214,0.16);
     --green:#34d399;
     --radius-lg:16px;
     --radius-md:12px;
@@ -152,17 +154,18 @@
   .lane-hint{font-size:12px;color:var(--text-tertiary);margin-bottom:10px;}
   .lane-empty{font-size:13px;color:var(--text-tertiary);padding:10px 4px 4px;border-top:1px dashed var(--panel-border);}
   .solo-lane[data-lane="attention"] .lane-title{color:var(--band-red);}
-  .solo-lane[data-lane="pr-reviews"] .lane-title{color:var(--band-orange);}
+  .solo-lane[data-lane="pr-reviews"] .lane-title{color:var(--band-pr);}
   .solo-lane[data-lane="waiting"] .lane-title{color:var(--band-orange);}
 
   .pr-badge{
     font-size:9px;font-weight:700;letter-spacing:.04em;line-height:1;
     padding:3px 6px;border-radius:4px;white-space:nowrap;
-    background:var(--band-orange-bg);color:var(--band-orange);
-    border:1px solid rgba(251,146,60,.4);
+    background:var(--band-pr-bg);color:var(--band-pr);
+    border:1px solid rgba(197,202,214,.4);
   }
   .pr-review-card .ticket-tag .jira-link{font-weight:600;}
-  .subtask-row.pr-review-row{background:rgba(251,146,60,.06);}
+  .subtask-row.pr-review-row{background:rgba(197,202,214,.08);}
+  .pr-review-card .score-badge{font-size:15px;letter-spacing:.02em;}
 
   /* ---------- CONTENT DELIVERY (footer) ---------- */
   .content-hint{font-size:12px;color:var(--text-tertiary);margin:-2px 0 12px;}

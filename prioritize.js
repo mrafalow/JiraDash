@@ -279,7 +279,34 @@ function normalizeFetchedData(data){
   data.msSoloTickets.forEach(t => {
     t.managedServices = true;
     t.scoringProfile = 'ms';
+    fixTicket(t);
   });
+  // PR review inject: parents with open PR assigned to me, not already in active/msSolo.
+  if(!Array.isArray(data.prReviewTickets)) data.prReviewTickets = [];
+  const soloKeys = new Set();
+  (data.activeTickets || []).forEach(t => { if(t && t.key) soloKeys.add(t.key); });
+  (data.msSoloTickets || []).forEach(t => { if(t && t.key) soloKeys.add(t.key); });
+  data.prReviewTickets = data.prReviewTickets.filter(t => t && t.key && !soloKeys.has(t.key));
+  data.prReviewTickets.forEach(t => {
+    fixTicket(t);
+    if(String(t.key || '').toUpperCase().startsWith('CONTENT-')){
+      t.managedServices = true;
+      t.scoringProfile = 'ms';
+    }
+  });
+  // Force “mine” on PR subtasks found via assignee = currentUser() search
+  // (covers scoped-token accountId gaps on parents already in In Focus).
+  const prKeys = new Set((data.prSubtaskKeys || []).filter(Boolean));
+  if(prKeys.size){
+    const markMine = (t) => {
+      (t.subtasks || []).forEach(st => {
+        if(st && prKeys.has(st.key)) st.assigneeIsCurrentUser = true;
+      });
+    };
+    (data.activeTickets || []).forEach(markMine);
+    (data.msSoloTickets || []).forEach(markMine);
+    (data.prReviewTickets || []).forEach(markMine);
+  }
   return data;
 }
 
@@ -539,16 +566,19 @@ function prReviewDueLabel(prSubtask){
 
 /**
  * Parents with an open PR subtask assigned to current user.
+ * Source: active + msSolo + dedicated prReviewTickets inject (see jira.fetchPrReviewTickets).
  * Sorted by review SLA urgency (most overdue / soonest first).
  */
 function collectPrReviewTickets(tickets){
-  const list = (tickets || [])
-    .map(t => {
-      const pr = findOpenPrAssignedToMe(t);
-      if(!pr) return null;
-      return { t, pr, daysUntilReviewDue: prReviewDaysUntilDue(pr) };
-    })
-    .filter(Boolean);
+  const seen = new Set();
+  const list = [];
+  (tickets || []).forEach(t => {
+    if(!t || !t.key || seen.has(t.key)) return;
+    const pr = findOpenPrAssignedToMe(t);
+    if(!pr) return;
+    seen.add(t.key);
+    list.push({ t, pr, daysUntilReviewDue: prReviewDaysUntilDue(pr) });
+  });
   return list.sort((a, b) => {
     const da = typeof a.daysUntilReviewDue === 'number' ? a.daysUntilReviewDue : Number.POSITIVE_INFINITY;
     const db = typeof b.daysUntilReviewDue === 'number' ? b.daysUntilReviewDue : Number.POSITIVE_INFINITY;
@@ -558,6 +588,23 @@ function collectPrReviewTickets(tickets){
     if(ta !== tb) return ta - tb;
     return String(a.t.key || '').localeCompare(String(b.t.key || ''));
   });
+}
+
+/** In Focus ticket pool for PR lane (includes PR-only parents). */
+function prReviewSourceTickets(data){
+  const out = [];
+  const seen = new Set();
+  function add(list){
+    (list || []).forEach(t => {
+      if(!t || !t.key || seen.has(t.key)) return;
+      seen.add(t.key);
+      out.push(t);
+    });
+  }
+  add((data && data.activeTickets) || []);
+  add((data && data.msSoloTickets) || []);
+  add((data && data.prReviewTickets) || []);
+  return out;
 }
 
 /** Blocker “why” labels for Waiting nudge cards (standup rule 5). */
