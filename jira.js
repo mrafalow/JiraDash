@@ -386,10 +386,11 @@ async function fetchContentTickets(currentAccountId, fieldIds){
     let raByParent = {};
     let subPresenceByParent = {};
     let handoffByKey = {};
+    let subsByParent = {};
     if(keys.length){
       try{
         // Subtask / RA presence for Progress chips + soft red-flag gate (no RA description).
-        const subsByParent = await fetchSubtasksForParents(keys, currentAccountId, false);
+        subsByParent = await fetchSubtasksForParents(keys, currentAccountId, false);
         Object.keys(subsByParent).forEach(pk => {
           const list = subsByParent[pk] || [];
           subPresenceByParent[pk] = list.length > 0;
@@ -409,6 +410,7 @@ async function fetchContentTickets(currentAccountId, fieldIds){
       jql,
       tickets: issues.map(i => {
         const mapped = mapContentTicket(i, currentAccountId, fieldIds);
+        mapped.subtasks = subsByParent[i.key] || [];
         mapped.hasRa = !!raByParent[i.key];
         mapped.hasSubtasks = !!subPresenceByParent[i.key];
         const handoff = handoffByKey[i.key];
@@ -446,10 +448,9 @@ async function fetchSubtasksForParents(keys, currentAccountId, includeRaDescript
 }
 
 /**
- * Open PR subtasks assigned to currentUser → parents for In Focus → PR reviews.
- * Needed when Marcin is PR assignee but not parent assignee/reporter (activeTickets miss).
- * Returns parents not already in knownParentKeys, plus all matching PR subtask keys
- * (so callers can force assigneeIsCurrentUser on tickets already on the board).
+ * Open subtasks assigned to currentUser → parents for In Focus quick-review lane.
+ * Covers PR plus any stage (RA, Copy, Media, …) on WDW/CONTENT when parent is missing
+ * from active/msSolo. Returns review subtask keys so callers can force assigneeIsCurrentUser.
  */
 async function fetchPrReviewTickets(currentAccountId, fieldIds, knownParentKeys){
   const jql =
@@ -463,17 +464,15 @@ async function fetchPrReviewTickets(currentAccountId, fieldIds, knownParentKeys)
       ['summary', 'status', 'assignee', 'created', 'duedate', 'resolutiondate', 'parent'],
       50
     );
-    const prMine = (subIssues || []).filter(issue =>
-      classifySubtaskType(issue.fields && issue.fields.summary) === 'PR'
-    );
-    if(!prMine.length){
+    const reviewMine = subIssues || [];
+    if(!reviewMine.length){
       return { jql, tickets: [], prSubtaskKeys: [] };
     }
 
-    const prSubtaskKeys = prMine.map(i => i.key).filter(Boolean);
+    const prSubtaskKeys = reviewMine.map(i => i.key).filter(Boolean);
     const missingParentKeys = [];
     const seenParent = new Set();
-    prMine.forEach(issue => {
+    reviewMine.forEach(issue => {
       const pk = issue.fields && issue.fields.parent && issue.fields.parent.key;
       if(!pk || seenParent.has(pk)) return;
       seenParent.add(pk);
@@ -528,7 +527,7 @@ async function fetchPrReviewTickets(currentAccountId, fieldIds, knownParentKeys)
       commentsWarning: (commentsResult && commentsResult.error) || null
     };
   } catch(err){
-    console.warn('[jira] PR review parent fetch failed:', err.message || err);
+    console.warn('[jira] Quick-review parent fetch failed:', err.message || err);
     return { jql, tickets: [], prSubtaskKeys: [], error: err.message || String(err) };
   }
 }

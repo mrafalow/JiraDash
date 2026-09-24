@@ -73,10 +73,11 @@ function renderMsStallCard(t){
   '</div>';
 }
 
-/** PR review card — open PR assigned to you; badge is always “PR” (light gray). */
+/** Quick-review card — open subtask assigned to you; light gray band (same as PR). */
 function renderPrReviewCard({t, pr}){
   const reason = prReviewReason(pr);
   const dueLabel = prReviewDueLabel(pr);
+  const stageBadge = (pr && pr.type && (STAGE_LABELS[pr.type] || pr.type)) || 'PR';
   const bandColor = 'var(--band-pr)';
   const bandBg = 'var(--band-pr-bg)';
   const priorityShort = (t.priority || '').replace(/^\d+ - /,'');
@@ -97,7 +98,7 @@ function renderPrReviewCard({t, pr}){
     const labelHtml = stLink ? '<a class="jira-link" href="'+stLink+'" target="_blank" rel="noopener">'+label+'</a>' : label;
     const isThisPr = pr && st.key === pr.key;
     let tagText = st.status === 'Closed' ? 'Done' : (st.assigneeIsCurrentUser === false ? 'Waiting on ' + (st.assigneeName || 'other') : 'In progress');
-    if(isThisPr && st.status !== 'Closed') tagText = 'Your review · 1-day SLA';
+    if(isThisPr && st.status !== 'Closed') tagText = 'Your quick review · 1-day SLA';
     return '<div class="subtask-row'+(isThisPr ? ' pr-review-row' : '')+'">' +
       '<span class="status-dot" style="background:'+color+'"></span>' +
       '<span class="subtask-type">'+labelHtml+'</span>' +
@@ -109,8 +110,8 @@ function renderPrReviewCard({t, pr}){
   return '<div class="ticket-card pr-review-card'+(isExpanded?' expanded':'')+(isManagedServicesTicket(t)?' ms-ticket':'')+'" style="--band-color:'+bandColor+'" data-key="'+escapeAttr(t.key)+'" data-pr-review="1">' +
     '<div class="ticket-row" data-toggle="'+escapeAttr(t.key)+'">' +
       '<div class="score-stack">' +
-        '<div class="score-badge" style="background:'+bandBg+';color:'+bandColor+'" title="PR review — 1-day SLA">PR</div>' +
-        '<span class="pr-badge" title="Peer review assigned to you">Review</span>' +
+        '<div class="score-badge" style="background:'+bandBg+';color:'+bandColor+'" title="Quick review — 1-day SLA">'+escapeHtml(stageBadge)+'</div>' +
+        '<span class="pr-badge" title="Subtask assigned to you for quick review">Review</span>' +
         msBadgeHtml(t) +
       '</div>' +
       '<div class="ticket-main">' +
@@ -257,7 +258,7 @@ function renderTicketList(){
   const container = document.getElementById('ticketList');
   const tickets = soloSourceTickets();
   const msStalls = collectMsStallTickets(STATE.data);
-  const prReviews = collectPrReviewTickets(prReviewSourceTickets(STATE.data));
+  const prReviews = collectPrReviewTickets(prReviewSourceTickets(STATE.data), STATE.data);
   if(!tickets.length && !msStalls.length && !prReviews.length){
     container.innerHTML = '<div class="empty-state"><b>Nothing in focus right now</b>New requests will show up here the moment they are assigned to you.</div>';
     return;

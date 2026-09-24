@@ -257,6 +257,7 @@ function normalizeFetchedData(data){
   };
   (data.activeTickets || []).forEach(fixTicket);
   (data.recentlyClosedTickets || []).forEach(fixTicket);
+  (data.contentTickets || []).forEach(fixTicket);
   // Recently Closed must stay WDW/own — never CONTENT delivery keys.
   data.recentlyClosedTickets = (data.recentlyClosedTickets || []).filter(t => {
     return !(t && t.key && String(t.key).toUpperCase().startsWith('CONTENT-'));
@@ -268,6 +269,12 @@ function normalizeFetchedData(data){
     const db = b.dueDate ? atMidnight(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
     if(da !== db) return da - db;
     return String(a.key || '').localeCompare(String(b.key || ''));
+  });
+  data.contentTickets.forEach(t => {
+    if(t && t.key && String(t.key).toUpperCase().startsWith('CONTENT-')){
+      t.managedServices = true;
+      t.scoringProfile = 'ms';
+    }
   });
   // MS Solo inject: CONTENT assigned to current user with RA present — scored separately.
   if(!Array.isArray(data.msSoloTickets)) data.msSoloTickets = [];
@@ -294,17 +301,18 @@ function normalizeFetchedData(data){
       t.scoringProfile = 'ms';
     }
   });
-  // Force “mine” on PR subtasks found via assignee = currentUser() search
-  // (covers scoped-token accountId gaps on parents already in In Focus).
-  const prKeys = new Set((data.prSubtaskKeys || []).filter(Boolean));
-  if(prKeys.size){
+  // Force “mine” on review subtasks found via assignee = currentUser() search
+  // (covers scoped-token accountId gaps on parents already on the board).
+  const reviewKeys = new Set((data.prSubtaskKeys || []).filter(Boolean));
+  if(reviewKeys.size){
     const markMine = (t) => {
       (t.subtasks || []).forEach(st => {
-        if(st && prKeys.has(st.key)) st.assigneeIsCurrentUser = true;
+        if(st && reviewKeys.has(st.key)) st.assigneeIsCurrentUser = true;
       });
     };
     (data.activeTickets || []).forEach(markMine);
     (data.msSoloTickets || []).forEach(markMine);
+    (data.contentTickets || []).forEach(markMine);
     (data.prReviewTickets || []).forEach(markMine);
   }
   return data;
@@ -325,8 +333,8 @@ const SOLO_LANES = [
   { id: 'attention', title: 'Needs Attention', hint: 'Due soon or high urgency' },
   {
     id: 'pr-reviews',
-    title: 'PR reviews (1-day)',
-    hint: 'Open PR subtasks assigned to you — 1 business day turnaround',
+    title: 'Quick reviews (1-day)',
+    hint: 'Subtasks where you block others (PR, RA, Copy, …) — not WF / Prod Val / Translations — 1 business day',
     omitIfEmpty: true
   },
   { id: 'action', title: 'My Action Items', hint: 'Yours to work — waiting items stay here unless urgent' },
@@ -520,14 +528,41 @@ function collectMsStallTickets(data){
     });
 }
 
-/** Open PR subtask assigned to the current user (peer review for you). */
-function findOpenPrAssignedToMe(ticket){
+function isCurrentOpenSubtask(st, model){
+  if(!st || !model || !model.currentOpen || model.currentOpen.missing) return false;
+  const cos = model.currentOpen.subtask;
+  return !!(cos && st.key === cos.key);
+}
+
+/** Subtasks that can wait — never quick-review (you are not blocking others). */
+const QUICK_REVIEW_EXCLUDED_TYPES = ['TRANSLATIONS', 'PRODVAL', 'WF'];
+
+/**
+ * Quick-review lane: open subtasks assigned to you where your delay blocks others.
+ * Excludes Translations. PR always qualifies. On Solo pool, skip current pipeline stage (Action).
+ */
+function qualifiesQuickReviewSubtask(st, model, inSoloPool){
+  if(!st || st.status === 'Closed' || st.assigneeIsCurrentUser !== true) return false;
+  if(st.type && QUICK_REVIEW_EXCLUDED_TYPES.indexOf(st.type) >= 0) return false;
+  if(st.type === 'PR') return true;
+  if(inSoloPool && isCurrentOpenSubtask(st, model)) return false;
+  return true;
+}
+
+function soloPoolKeySet(data){
+  const set = new Set();
+  ((data && data.activeTickets) || []).forEach(t => { if(t && t.key) set.add(t.key); });
+  ((data && data.msSoloTickets) || []).forEach(t => { if(t && t.key) set.add(t.key); });
+  return set;
+}
+
+/** Open quick-review subtask assigned to the current user (peer / bounce-back). */
+function findOpenQuickReviewAssignedToMe(ticket, model, inSoloPool){
   if(!ticket) return null;
   const open = (ticket.subtasks || []).filter(st =>
-    st && st.type === 'PR' && st.status !== 'Closed' && st.assigneeIsCurrentUser === true
+    qualifiesQuickReviewSubtask(st, model, inSoloPool)
   );
   if(!open.length) return null;
-  // Prefer oldest open PR when multiple exist.
   return open.slice().sort((a, b) => {
     const ta = a.createdDate ? atMidnight(a.createdDate).getTime() : Number.POSITIVE_INFINITY;
     const tb = b.createdDate ? atMidnight(b.createdDate).getTime() : Number.POSITIVE_INFINITY;
@@ -548,12 +583,17 @@ function prReviewDaysUntilDue(prSubtask){
   return businessDaysBetween(todayMid(), expected);
 }
 
-function prReviewReason(prSubtask){
-  const days = prReviewDaysUntilDue(prSubtask);
-  if(days == null) return 'PR assigned to you — review (1-day SLA)';
-  if(days < 0) return 'PR review overdue · ' + Math.abs(days) + 'd past 1-day SLA';
-  if(days === 0) return 'PR review due today · 1-day turnaround';
-  return 'PR review due in ' + days + 'd · 1-day turnaround';
+function quickReviewStageLabel(st){
+  return (st && st.type && (STAGE_LABELS[st.type] || st.type)) || 'Review';
+}
+
+function prReviewReason(reviewSubtask){
+  const stage = quickReviewStageLabel(reviewSubtask);
+  const days = prReviewDaysUntilDue(reviewSubtask);
+  if(days == null) return stage + ' assigned to you — review (1-day SLA)';
+  if(days < 0) return stage + ' review overdue · ' + Math.abs(days) + 'd past 1-day SLA';
+  if(days === 0) return stage + ' review due today · 1-day turnaround';
+  return stage + ' review due in ' + days + 'd · 1-day turnaround';
 }
 
 function prReviewDueLabel(prSubtask){
@@ -565,19 +605,22 @@ function prReviewDueLabel(prSubtask){
 }
 
 /**
- * Parents with an open PR subtask assigned to current user.
- * Source: active + msSolo + dedicated prReviewTickets inject (see jira.fetchPrReviewTickets).
+ * Parents with an open quick-review subtask assigned to current user.
+ * Source: active + msSolo + CONTENT portfolio + prReviewTickets inject.
  * Sorted by review SLA urgency (most overdue / soonest first).
  */
-function collectPrReviewTickets(tickets){
+function collectPrReviewTickets(tickets, data){
+  const soloKeys = soloPoolKeySet(data);
   const seen = new Set();
   const list = [];
   (tickets || []).forEach(t => {
     if(!t || !t.key || seen.has(t.key)) return;
-    const pr = findOpenPrAssignedToMe(t);
-    if(!pr) return;
+    const model = buildStageModel(t);
+    const inSoloPool = soloKeys.has(t.key);
+    const review = findOpenQuickReviewAssignedToMe(t, model, inSoloPool);
+    if(!review) return;
     seen.add(t.key);
-    list.push({ t, pr, daysUntilReviewDue: prReviewDaysUntilDue(pr) });
+    list.push({ t, pr: review, daysUntilReviewDue: prReviewDaysUntilDue(review) });
   });
   return list.sort((a, b) => {
     const da = typeof a.daysUntilReviewDue === 'number' ? a.daysUntilReviewDue : Number.POSITIVE_INFINITY;
@@ -590,7 +633,7 @@ function collectPrReviewTickets(tickets){
   });
 }
 
-/** In Focus ticket pool for PR lane (includes PR-only parents). */
+/** In Focus ticket pool for quick-review lane (incl. CONTENT parents not yet MS Solo). */
 function prReviewSourceTickets(data){
   const out = [];
   const seen = new Set();
@@ -604,6 +647,7 @@ function prReviewSourceTickets(data){
   add((data && data.activeTickets) || []);
   add((data && data.msSoloTickets) || []);
   add((data && data.prReviewTickets) || []);
+  add((data && data.contentTickets) || []);
   return out;
 }
 
