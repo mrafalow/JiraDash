@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Marcin Rafalowicz</title>
+  <meta name="description" content="Personal site placeholder for Marcin Rafalowicz, photographer and educator behind Pro Image Academy and the YouTube channel From Clicks To Cash.">
+  <link rel="icon" href="media/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500&family=Manrope:wght@400;500&family=Outfit:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <a class="skip" href="#content">Skip to content</a>
+  <div class="mobile-bar">
+    <a class="logo-link" href="index.html">Marcin Rafalowicz</a>
+  </div>
+  <button class="menu-toggle" type="button" data-menu-open aria-expanded="false" aria-controls="slide-nav">
+    <span class="menu-toggle__bars" aria-hidden="true"><i></i><i></i></span>
+    Menu
+  </button>
+  <nav class="desktop-nav" aria-label="Primary">
+    <div class="desktop-nav__group">
+      <a data-nav-link href="about.html">About</a>
+      <a data-nav-link href="book.html">Book</a>
+      <a data-nav-link href="youtube.html">YouTube</a>
+    </div>
+    <a class="logo-link" href="index.html">Marcin Rafalowicz</a>
+    <div class="desktop-nav__group desktop-nav__group--end">
+      <a data-nav-link href="skool.html">SKOOL</a>
+      <a data-nav-link href="speaking.html">Speaking</a>
+      <a data-nav-link href="contact.html">Contact</a>
+    </div>
+  </nav>
+
+  <div class="slide-nav" id="slide-nav" data-slide-nav aria-hidden="true">
+    <button class="slide-nav__backdrop" type="button" data-menu-close aria-label="Close menu"></button>
+    <div class="slide-nav__panel" role="dialog" aria-modal="true" aria-label="Site menu">
+      <img class="slide-portrait" src="media/menu-portrait.jpg" alt="">
+      <div class="slide-scrim"></div>
+      <button class="slide-close" type="button" data-menu-close aria-label="Close menu">&times;</button>
+      <a class="slide-home" href="index.html">Marcin Rafalowicz</a>
+      <nav class="slide-links" aria-label="Sections">
+        <a class="slide-link" data-nav-link href="about.html">About</a>
+        <a class="slide-link slide-link--display" data-nav-link href="book.html">Book</a>
+        <a class="slide-link" data-nav-link href="youtube.html">YouTube</a>
+        <a class="slide-link slide-link--display" data-nav-link href="skool.html">SKOOL</a>
+        <a class="slide-link" data-nav-link href="speaking.html">Speaking</a>
+        <a class="slide-link slide-link--display" data-nav-link href="contact.html">Contact</a>
+      </nav>
+      <div class="slide-socials">
+        <a href="https://www.facebook.com/palmcityclickfirm" target="_blank" rel="noopener noreferrer" aria-label="Facebook">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 8h3V4h-3c-2.8 0-5 2.2-5 5v2H7v4h2v8h4v-8h3l1-4h-4V9c0-.6.4-1 1-1z"/></svg>
+        </a>
+        <a href="https://www.youtube.com/@proimageacademy" target="_blank" rel="noopener noreferrer" aria-label="YouTube">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M23 12.2s0-3.2-.4-4.6c-.2-.9-.9-1.6-1.8-1.8C19.2 5.4 12 5.4 12 5.4s-7.2 0-8.8.4c-.9.2-1.6.9-1.8 1.8C1 9 1 12.2 1 12.2s0 3.2.4 4.6c.2.9.9 1.6 1.8 1.8 1.6.4 8.8.4 8.8.4s7.2 0 8.8-.4c.9-.2 1.6-.9 1.8-1.8.4-1.4.4-4.6.4-4.6zM9.8 15.6V8.8l6.3 3.4-6.3 3.4z"/></svg>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <main id="content">
+    <section class="hero" aria-label="Introduction">
+      <video class="hero__video" autoplay muted loop playsinline poster="media/hero-still.jpg">
+        <source src="media/hero.mp4" type="video/mp4">
+      </video>
+      <div class="hero__shade"></div>
+      <div class="hero__socials">
+        <a href="https://www.facebook.com/palmcityclickfirm" target="_blank" rel="noopener noreferrer" aria-label="Facebook">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 8h3V4h-3c-2.8 0-5 2.2-5 5v2H7v4h2v8h4v-8h3l1-4h-4V9c0-.6.4-1 1-1z"/></svg>
+        </a>
+        <a href="https://www.youtube.com/@proimageacademy" target="_blank" rel="noopener noreferrer" aria-label="YouTube">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M23 12.2s0-3.2-.4-4.6c-.2-.9-.9-1.6-1.8-1.8C19.2 5.4 12 5.4 12 5.4s-7.2 0-8.8.4c-.9.2-1.6.9-1.8 1.8C1 9 1 12.2 1 12.2s0 3.2.4 4.6c.2.9.9 1.6 1.8 1.8 1.6.4 8.8.4 8.8.4s7.2 0 8.8-.4c.9-.2 1.6-.9 1.8-1.8.4-1.4.4-4.6.4-4.6zM9.8 15.6V8.8l6.3 3.4-6.3 3.4z"/></svg>
+        </a>
+      </div>
+      <a class="hero__watch" href="https://www.youtube.com/@proimageacademy" target="_blank" rel="noopener noreferrer">
+        <span>Watch</span>
+        <span class="play-dot" aria-hidden="true"></span>
+      </a>
+      <div class="hero__copy">
+        <p class="hero__name">Marcin Rafalowicz</p>
+        <p class="script">from clicks to cash</p>
+      </div>
+    </section>
+
+    <section class="wordmark-band" aria-label="Name">
+      <h1>Marcin<br>Rafalowicz</h1>
+    </section>
+
+    <section class="story">
+      <div class="wrap">
+        <p class="script">photography, taught like a business</p>
+        <h2 class="display">The frame is only the beginning.</h2>
+        <div class="story__grid">
+          <p>Marcin Rafalowicz makes photographs and teaches the business that has to stand next to them. Pro Image Academy is his school. From Clicks To Cash is the YouTube channel where the same lessons show up in public.</p>
+          <p>This page is a placeholder for that practice: how a session is priced, how an offer is named, and how a photographer keeps the work and the studio in the same conversation.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="collage">
+      <div class="collage__photos">
+        <img src="media/collage-1.jpg" alt="Placeholder studio frame labeled for Marcin Rafalowicz">
+        <img src="media/collage-2.jpg" alt="Placeholder class frame for Pro Image Academy and Marcin Rafalowicz">
+        <img src="media/collage-3.jpg" alt="Placeholder channel frame for From Clicks To Cash and Marcin Rafalowicz">
+      </div>
+      <div class="collage__copy">
+        <p class="kicker">The practice</p>
+        <p>A studio, a classroom, and a channel. The pictures are stand-ins. The work they point at is the long edit between a proof and a paid date on the calendar.</p>
+        <a class="btn" href="about.html">More about me <span class="arrow" aria-hidden="true">&rarr;</span></a>
+      </div>
+    </section>
+
+    <section class="seen" aria-label="As seen in, placeholder marks">
+      <p class="seen__label">As seen in</p>
+      <div class="marquee">
+        <div class="marquee__track">
+          <span class="mark">Slot 01</span>
+          <span class="mark mark--serif">Column</span>
+          <span class="mark">Mark A</span>
+          <span class="mark">Desk</span>
+          <span class="mark mark--serif">Issue</span>
+          <span class="mark">Frame</span>
+          <span class="mark">Slot 01</span>
+          <span class="mark mark--serif">Column</span>
+          <span class="mark">Mark A</span>
+          <span class="mark">Desk</span>
+          <span class="mark mark--serif">Issue</span>
+          <span class="mark">Frame</span>
+        </div>
+      </div>
+      <p class="seen__note">Placeholder marks. Not real publications.</p>
+    </section>
+
+    <section class="portrait-block">
+      <p class="script">marcin rafalowicz</p>
+      <img src="media/portrait.jpg" alt="Portrait placeholder for Marcin Rafalowicz">
+    </section>
+
+    <section class="determined">
+      <div class="wrap determined__grid">
+        <div>
+          <p class="script">i'm marcin rafalowicz</p>
+          <h2 class="display">Determined to help you unlock your possibilities.</h2>
+        </div>
+        <div>
+          <p>The next step is usually smaller than the mood around it: a price, a page, a follow-up. Pro Image Academy holds the longer version of that work. This button opens the assessment.</p>
+          <a class="btn" href="https://www.proimageacademy.com/start" target="_blank" rel="noopener noreferrer">Start the assessment <span class="arrow" aria-hidden="true">&rarr;</span></a>
+        </div>
+      </div>
+    </section>
+
+    <section class="quotes" aria-roledescription="carousel" aria-label="Placeholder testimonials">
+      <div class="slider" data-slider tabindex="0">
+        <button class="slider__btn slider__btn--prev" type="button" data-prev aria-label="Previous quote">&lsaquo;</button>
+        <div class="slider__viewport">
+          <article class="slide is-active">
+            <div class="quote-avatar">01</div>
+            <p class="pull">A plan you can use the same week.</p>
+            <blockquote>“The class made the business side of a session feel like a checklist, not a personality test.”</blockquote>
+            <p class="quote-name">Unnamed client</p>
+            <p class="quote-role">Placeholder quote. Not a real person.</p>
+          </article>
+          <article class="slide">
+            <div class="quote-avatar">02</div>
+            <p class="pull">Clear teaching. The next step.</p>
+            <blockquote>“I left with a price I could say out loud and a page that matched it.”</blockquote>
+            <p class="quote-name">Unnamed student</p>
+            <p class="quote-role">Placeholder quote. Not a real person.</p>
+          </article>
+          <article class="slide">
+            <div class="quote-avatar">03</div>
+            <p class="pull">The show I send new photographers.</p>
+            <blockquote>“From Clicks To Cash is where I point people who can already shoot and still hesitate to invoice.”</blockquote>
+            <p class="quote-name">Unnamed viewer</p>
+            <p class="quote-role">Placeholder quote. Not a real person.</p>
+          </article>
+          <article class="slide">
+            <div class="quote-avatar">04</div>
+            <p class="pull">Less theater. More studio.</p>
+            <blockquote>“It sounded like someone who has stood in the room, not someone reading a script about the room.”</blockquote>
+            <p class="quote-name">Unnamed host</p>
+            <p class="quote-role">Placeholder quote. Not a real person.</p>
+          </article>
+        </div>
+        <button class="slider__btn slider__btn--next" type="button" data-next aria-label="Next quote">&rsaquo;</button>
+      </div>
+      <p class="slider__status" data-slider-status>1 / 4</p>
+    </section>
+
+    <section class="speaking-banner" aria-label="Speaking">
+      <h2 class="display">Speaking</h2>
+    </section>
+    <div class="stage-wrap">
+      <div class="stage">
+        <span class="stage__tick stage__tick--tl" aria-hidden="true"></span>
+        <span class="stage__tick stage__tick--tr" aria-hidden="true"></span>
+        <span class="stage__tick stage__tick--bl" aria-hidden="true"></span>
+        <span class="stage__tick stage__tick--br" aria-hidden="true"></span>
+        <video autoplay muted loop playsinline poster="media/speaking-still.jpg" aria-label="Speaking clip placeholder for Marcin Rafalowicz">
+          <source src="media/hero.mp4" type="video/mp4">
+        </video>
+      </div>
+    </div>
+    <section class="speaking-copy">
+      <div class="wrap speaking-copy__grid">
+        <div>
+          <p class="script">let's talk about the studio</p>
+          <h3 class="display">From the session to the room that hired you.</h3>
+        </div>
+        <div>
+          <p>Marcin Rafalowicz speaks to photographers and the teams around them about pricing, offers, and the quiet systems that keep a studio booked. The clip above is a placeholder, not a recording of a talk.</p>
+          <p>Stages, classrooms, and company offsites can use the same skeleton: one idea, one example from the work, one thing the room can do on Monday.</p>
+          <a class="btn" href="speaking.html">Book me to speak <span class="arrow" aria-hidden="true">&rarr;</span></a>
+        </div>
+      </div>
+    </section>
+
+    <section class="channel">
+      <div class="wrap">
+        <div class="channel__head">
+          <div>
+            <p class="kicker">YouTube</p>
+            <p class="script">the channel</p>
+            <h2 class="display">From Clicks To Cash</h2>
+          </div>
+          <div>
+            <p>Business talk for photographers, hosted by Marcin Rafalowicz. Episodes are short enough to watch between sessions and specific enough to use on the next inquiry.</p>
+            <a class="btn" href="https://www.youtube.com/@proimageacademy" target="_blank" rel="noopener noreferrer">Subscribe on YouTube <span class="arrow" aria-hidden="true">&rarr;</span></a>
+          </div>
+        </div>
+        <div class="episodes">
+          <a class="episode" href="https://www.youtube.com/@proimageacademy" target="_blank" rel="noopener noreferrer">
+            <span class="episode__media"><img src="media/thumb-1.jpg" alt="Placeholder thumbnail, Price the session, Marcin Rafalowicz"><span class="episode__play" aria-hidden="true"></span></span>
+            <span class="episode__title">Price the session before you book it</span>
+          </a>
+          <a class="episode" href="https://www.youtube.com/@proimageacademy" target="_blank" rel="noopener noreferrer">
+            <span class="episode__media"><img src="media/thumb-2.jpg" alt="Placeholder thumbnail, A quiet-month offer, Marcin Rafalowicz"><span class="episode__play" aria-hidden="true"></span></span>
+            <span class="episode__title">A simple offer for a quiet month</span>
+          </a>
+          <a class="episode" href="https://www.youtube.com/@proimageacademy" target="_blank" rel="noopener noreferrer">
+            <span class="episode__media"><img src="media/thumb-3.jpg" alt="Placeholder thumbnail, The discovery call, Marcin Rafalowicz"><span class="episode__play" aria-hidden="true"></span></span>
+            <span class="episode__title">What to say on a discovery call</span>
+          </a>
+          <a class="episode" href="https://www.youtube.com/@proimageacademy" target="_blank" rel="noopener noreferrer">
+            <span class="episode__media"><img src="media/thumb-4.jpg" alt="Placeholder thumbnail, A gallery that books, Marcin Rafalowicz"><span class="episode__play" aria-hidden="true"></span></span>
+            <span class="episode__title">Build a gallery that sells the next date</span>
+          </a>
+          <a class="episode" href="https://www.youtube.com/@proimageacademy" target="_blank" rel="noopener noreferrer">
+            <span class="episode__media"><img src="media/thumb-5.jpg" alt="Placeholder thumbnail, First ten videos, Marcin Rafalowicz"><span class="episode__play" aria-hidden="true"></span></span>
+            <span class="episode__title">The first ten videos, without a studio set</span>
+          </a>
+          <a class="episode" href="https://www.youtube.com/@proimageacademy" target="_blank" rel="noopener noreferrer">
+            <span class="episode__media"><img src="media/thumb-6.jpg" alt="Placeholder thumbnail, How the academy works, Marcin Rafalowicz"><span class="episode__play" aria-hidden="true"></span></span>
+            <span class="episode__title">How Pro Image Academy is structured</span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="optin" aria-label="Email list">
+      <div class="optin__shade"></div>
+      <div class="optin__inner">
+        <p class="script">a short note, when the list is real</p>
+        <h2 class="display">Join the list</h2>
+        <p>Notes from Marcin Rafalowicz on the studio and the business around it. First name and email stay in this browser.</p>
+        <form class="form" data-form novalidate>
+          <div data-form-fields>
+            <label class="field"><span>First name</span><input name="firstName" type="text" required autocomplete="given-name"></label>
+            <label class="field"><span>Email</span><input name="email" type="email" required autocomplete="email"></label>
+            <button class="btn btn--light" type="submit">Count me in <span class="arrow" aria-hidden="true">&rarr;</span></button>
+          </div>
+          <div class="form-success" data-success hidden>
+            <p>You’re on the list for this page. Nothing was emailed.</p>
+          </div>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="reels" aria-label="Reel placeholders">
+      <figure class="reel"><img src="media/reel-1.jpg" alt="Reel placeholder, studio, Marcin Rafalowicz"><figcaption>Studio</figcaption></figure>
+      <figure class="reel"><img src="media/reel-2.jpg" alt="Reel placeholder, offer, Marcin Rafalowicz"><figcaption>Offer</figcaption></figure>
+      <figure class="reel"><img src="media/reel-3.jpg" alt="Reel placeholder, frame, Marcin Rafalowicz"><figcaption>Frame</figcaption></figure>
+      <figure class="reel"><img src="media/reel-4.jpg" alt="Reel placeholder, teach, Marcin Rafalowicz"><figcaption>Teach</figcaption></figure>
+      <figure class="reel"><img src="media/reel-5.jpg" alt="Reel placeholder, stage, Marcin Rafalowicz"><figcaption>Stage</figcaption></figure>
+    </div>
+    <p class="footer-wordmark">Marcin Rafalowicz</p>
+    <div class="footer-grid">
+      <div>
+        <p class="kicker">Navigate</p>
+        <a href="index.html">Home</a>
+        <a href="about.html">About</a>
+        <a href="speaking.html">Speaking</a>
+        <a href="contact.html">Contact</a>
+      </div>
+      <div>
+        <p class="kicker">Browse</p>
+        <a href="book.html">Book</a>
+        <a href="youtube.html">YouTube</a>
+        <a href="skool.html">SKOOL</a>
+        <a href="https://www.proimageacademy.com/start" target="_blank" rel="noopener noreferrer">Start the assessment</a>
+      </div>
+      <div>
+        <p class="kicker">Follow</p>
+        <a href="https://www.facebook.com/palmcityclickfirm" target="_blank" rel="noopener noreferrer">Facebook</a>
+        <a href="https://www.youtube.com/@proimageacademy" target="_blank" rel="noopener noreferrer">YouTube</a>
+      </div>
+    </div>
+    <p class="footer-note">Notes from the studio, the classroom, and the channel.</p>
+    <p class="copyright">© 2026 Marcin Rafalowicz</p>
+  </footer>
+  <script src="js/site.js"></script>
+</body>
+</html>
