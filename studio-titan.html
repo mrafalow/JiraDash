@@ -189,6 +189,10 @@
             <div><div class="config-label">Translations window</div><div class="config-sub">Business days allowed after actual publish</div></div>
             <input type="number" min="1" class="config-input" id="cfg_TRANSLATIONS_WINDOW">
           </div>
+          <div class="config-row">
+            <div><div class="config-label">Publishing light — days ahead</div><div class="config-sub">Business days before due (same as Due “In Nd” on cards). 0 = due date only; use 2–4 for sensitive launches</div></div>
+            <input type="number" min="0" max="14" class="config-input" id="cfg_PUBLISH_ALERT_DAYS">
+          </div>
           <div class="config-actions">
             <button class="config-save-btn" id="configSaveBtn">Save</button>
             <button class="config-reset-btn" id="configResetBtn">Reset to defaults</button>

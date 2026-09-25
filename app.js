@@ -373,6 +373,26 @@ function dueTodayTickets(tickets){
   return ticketsDueOn(tickets, dueDateKey(todayMid()));
 }
 
+/** Go-live window for publishing light (business days — matches Due “In Nd” labels). Includes overdue. */
+function ticketsInPublishAlertWindow(tickets, daysAhead){
+  const ahead = typeof daysAhead === 'number' && daysAhead >= 0 ? Math.floor(daysAhead) : 0;
+  const today = todayMid();
+  return tickets.filter(t => {
+    if(!t || !t.dueDate) return false;
+    const due = atMidnight(t.dueDate);
+    if(isNaN(due.getTime())) return false;
+    const bizDays = businessDaysBetween(today, due);
+    if(bizDays < 0) return true;
+    return bizDays <= ahead;
+  });
+}
+
+function publishLightOffLabel(daysAhead){
+  if(!daysAhead) return 'Nothing publishing today';
+  if(daysAhead === 1) return 'Nothing publishing today or tomorrow';
+  return 'Nothing publishing within '+daysAhead+' days';
+}
+
 /** Due-date ascending list. Omit limit (or pass null) for the full list. */
 function horizonTickets(tickets, limit){
   const sorted = tickets
@@ -576,7 +596,6 @@ function renderBottomStrip(){
     return { t, model, scoring: computeScore(t, model) };
   });
 
-  const dueToday = dueTodayTickets(tickets);
   const atRisk = scored
     .filter(({model}) => model.stageGap > 0)
     .slice()
@@ -591,9 +610,11 @@ function renderBottomStrip(){
   const waiting = scored.filter(({t, model}) => isWaitingOnOthers(model, t));
   STATE.waitingItems = waiting;
 
+  const publishDaysAhead = UI_CONFIG.PUBLISH_ALERT_DAYS;
+  const publishWindow = ticketsInPublishAlertWindow(tickets, publishDaysAhead);
   let publishState = 'off';
-  if(dueToday.length){
-    const anyUnapproved = dueToday.some(t => {
+  if(publishWindow.length){
+    const anyUnapproved = publishWindow.some(t => {
       const wf = (t.subtasks||[]).find(s => s.type === 'WF');
       return !wf || wf.status !== 'Closed';
     });
@@ -622,7 +643,7 @@ function renderBottomStrip(){
         '<circle class="mouse-ear" cx="35" cy="12" r="9"/>' +
         '<circle class="mouse-face" cx="23" cy="28" r="14"/>' +
       '</svg>' +
-      '<div class="publish-light-label">'+(publishState==='off'?'Nothing publishing today':publishState==='green'?'Clear to publish':'Unlock needed — go now')+'</div>' +
+      '<div class="publish-light-label">'+(publishState==='off'?publishLightOffLabel(publishDaysAhead):publishState==='green'?'Clear to publish':'Unlock needed — go now')+'</div>' +
     '</div>' +
     strip('warning', 'var(--band-orange)', 'At Risk', atRisk.length, atRisk.length ? 'Behind expected pace' : 'All on pace', {
       id: 'atRiskStrip',
@@ -1385,15 +1406,22 @@ async function loadAll(spinning){
   }
 }
 
-const CONFIG_KEYS = ['RA_CREATE_BY','RA_CLOSE_BY','COND_CLOSE_BY','PR_TURNAROUND','TRANSLATIONS_WINDOW'];
+const BIZ_CONFIG_KEYS = ['RA_CREATE_BY','RA_CLOSE_BY','COND_CLOSE_BY','PR_TURNAROUND','TRANSLATIONS_WINDOW'];
+const UI_CONFIG_KEYS = ['PUBLISH_ALERT_DAYS'];
+const CONFIG_KEYS = BIZ_CONFIG_KEYS.concat(UI_CONFIG_KEYS);
 const CONFIG_STORAGE_KEY = 'studio-titan-biz-config';
+const DEFAULT_UI_CONFIG = { PUBLISH_ALERT_DAYS: 0 };
+const UI_CONFIG = Object.assign({}, DEFAULT_UI_CONFIG);
 
 function loadSavedConfig(){
   try{
     const raw = localStorage.getItem(CONFIG_STORAGE_KEY);
     if(raw){
       const saved = JSON.parse(raw);
-      CONFIG_KEYS.forEach(k => { if(typeof saved[k] === 'number' && saved[k] > 0) BIZ[k] = saved[k]; });
+      BIZ_CONFIG_KEYS.forEach(k => { if(typeof saved[k] === 'number' && saved[k] > 0) BIZ[k] = saved[k]; });
+      if(typeof saved.PUBLISH_ALERT_DAYS === 'number' && saved.PUBLISH_ALERT_DAYS >= 0){
+        UI_CONFIG.PUBLISH_ALERT_DAYS = Math.min(14, Math.floor(saved.PUBLISH_ALERT_DAYS));
+      }
     }
   } catch(err){
     // defaults
@@ -1401,9 +1429,13 @@ function loadSavedConfig(){
 }
 
 function populateConfigForm(){
-  CONFIG_KEYS.forEach(k => {
+  BIZ_CONFIG_KEYS.forEach(k => {
     const el = document.getElementById('cfg_' + k);
     if(el) el.value = BIZ[k];
+  });
+  UI_CONFIG_KEYS.forEach(k => {
+    const el = document.getElementById('cfg_' + k);
+    if(el) el.value = UI_CONFIG[k];
   });
   const note = document.getElementById('configSavedNote');
   if(note) note.textContent = '';
@@ -1411,17 +1443,26 @@ function populateConfigForm(){
 
 function saveConfig(){
   const updated = {};
-  for(const k of CONFIG_KEYS){
+  for(const k of BIZ_CONFIG_KEYS){
     const el = document.getElementById('cfg_' + k);
     const val = parseInt(el.value, 10);
     if(!val || val < 1){
-      document.getElementById('configSavedNote').textContent = 'Values must be positive whole numbers.';
+      document.getElementById('configSavedNote').textContent = 'Pipeline values must be positive whole numbers.';
       document.getElementById('configSavedNote').style.color = 'var(--band-red)';
       return;
     }
     updated[k] = val;
   }
-  CONFIG_KEYS.forEach(k => { BIZ[k] = updated[k]; });
+  const aheadEl = document.getElementById('cfg_PUBLISH_ALERT_DAYS');
+  const aheadVal = aheadEl ? parseInt(aheadEl.value, 10) : 0;
+  if(isNaN(aheadVal) || aheadVal < 0 || aheadVal > 14){
+    document.getElementById('configSavedNote').textContent = 'Publishing days ahead must be 0–14.';
+    document.getElementById('configSavedNote').style.color = 'var(--band-red)';
+    return;
+  }
+  updated.PUBLISH_ALERT_DAYS = aheadVal;
+  BIZ_CONFIG_KEYS.forEach(k => { BIZ[k] = updated[k]; });
+  UI_CONFIG.PUBLISH_ALERT_DAYS = aheadVal;
   try{
     localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(updated));
   } catch(err){
@@ -1445,7 +1486,8 @@ function saveConfig(){
 }
 
 function resetConfigToDefaults(){
-  CONFIG_KEYS.forEach(k => { BIZ[k] = DEFAULT_BIZ[k]; });
+  BIZ_CONFIG_KEYS.forEach(k => { BIZ[k] = DEFAULT_BIZ[k]; });
+  UI_CONFIG_KEYS.forEach(k => { UI_CONFIG[k] = DEFAULT_UI_CONFIG[k]; });
   populateConfigForm();
   saveConfig();
 }
