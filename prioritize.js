@@ -185,26 +185,47 @@ function buildStageModel(ticket){
   };
 }
 
+/**
+ * Due-urgency floor from parent due (business days — same basis as daysUntilDue).
+ * Option C: displayed score = max(pipelineScore, dueUrgencyScore).
+ * Tuned so Due In 2d (Attention band) badges ~45, not 0, and stays below a true 75.
+ */
+function dueUrgencyScore(daysUntilDue){
+  if(typeof daysUntilDue !== 'number' || !Number.isFinite(daysUntilDue)) return 0;
+  if(daysUntilDue <= -3) return 100;
+  if(daysUntilDue === -2) return 95;
+  if(daysUntilDue === -1) return 90;
+  if(daysUntilDue === 0) return 75;
+  if(daysUntilDue === 1) return 50;
+  if(daysUntilDue === 2) return 45;
+  return 0;
+}
+
+function bandForScore(score){
+  if(score >= 75) return 'red';
+  if(score >= 50) return 'orange';
+  if(score >= 25) return 'gold';
+  return 'blue';
+}
+
 function computeScore(ticket, model){
   const today = todayMid();
   const daysUntilDue = businessDaysBetween(today, model.dueDate);
+  const dueUrg = dueUrgencyScore(daysUntilDue);
 
   const nothingStartedAndDueNow = model.actualIndex === 0 && daysUntilDue <= 0;
   if(nothingStartedAndDueNow){
-    return { score: 100, band: 'red', daysUntilDue };
+    const score = Math.max(100, dueUrg);
+    return { score, band: bandForScore(score), daysUntilDue };
   }
 
   const urgencyMult = Math.max(URGENCY.MIN_MULT, Math.min(URGENCY.MAX_MULT, URGENCY.MAX_MULT - daysUntilDue * URGENCY.DECAY_PER_DAY));
   const priorityMult = PRIORITY_MULT[ticket.priority] || 1.0;
   const raw = model.stageGap * urgencyMult * SCORE_SCALE * priorityMult;
-  const score = Math.max(0, Math.min(100, Math.round(raw)));
+  const pipelineScore = Math.max(0, Math.min(100, Math.round(raw)));
+  const score = Math.max(pipelineScore, dueUrg);
 
-  let band = 'blue';
-  if(score >= 75) band = 'red';
-  else if(score >= 50) band = 'orange';
-  else if(score >= 25) band = 'gold';
-
-  return { score, band, daysUntilDue };
+  return { score, band: bandForScore(score), daysUntilDue };
 }
 
 const BAND_COLOR = { red:'var(--band-red)', orange:'var(--band-orange)', gold:'var(--band-gold)', blue:'var(--band-blue)' };
