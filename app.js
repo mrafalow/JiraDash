@@ -279,7 +279,7 @@ function renderTicketList(){
     });
   });
 
-  // MS stalls (still with MS, due ≤10 calendar days) → Needs Attention; sort by due; no pipeline score.
+  // MS stalls (still with MS, due ≤5 calendar days) → Needs Attention; sort by due; no pipeline score.
   const stallKeys = new Set(msStalls.map(t => t.key));
   byLane.attention = byLane.attention.filter(item => !stallKeys.has(item.t.key));
   const stallItems = msStalls.map(t => ({ t, msStall: true }));

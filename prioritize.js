@@ -377,7 +377,7 @@ const PR_REVIEW_TURNAROUND_DAYS = 1;
  */
 const MS_CHECKIN_CALENDAR_DAYS = 3;
 /** Hard MS stall: due within this many calendar days (or overdue), still with MS. */
-const MS_STALL_DUE_WITHIN_DAYS = 10;
+const MS_STALL_DUE_WITHIN_DAYS = 5;
 
 /** Calendar (not business) day delta from start → end at midnight. */
 function calendarDaysBetween(start, end){
@@ -504,7 +504,7 @@ function isMsCheckinSoft(ticket, msSoloKeys){
 }
 
 /**
- * Hard MS stall: due exists and ≤10 calendar days away (or overdue), still with MS.
+ * Hard MS stall: due exists and ≤5 calendar days away (or overdue), still with MS.
  * Inject into Needs Attention — no Solo pipeline scoring.
  */
 function isMsStallHard(ticket, msSoloKeys){
