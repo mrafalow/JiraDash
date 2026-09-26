@@ -359,10 +359,10 @@ const SOLO_LANES = [
     omitIfEmpty: true
   },
   { id: 'action', title: 'My Action Items', hint: 'Yours to work — waiting items stay here unless urgent' },
-  { id: 'waiting', title: 'Waiting on Others', hint: 'PR: overdue or past expected only. Other stages: due soon too. Partner/images: while craft is open and comments still block.' }
+  { id: 'waiting', title: 'Waiting on Others', hint: 'PR: Jira subtask overdue only. Other stages: overdue or due soon. Partner/images: while craft is open and comments still block.' }
 ];
 const DUE_SOON_DAYS = 2;
-/** Subtask Jira due within this many business days → Waiting nudge (incl. PR). */
+/** Subtask Jira due within this many business days → Waiting nudge (non-PR stages). */
 const SUBTASK_DUE_SOON_DAYS = 2;
 const ATTENTION_SCORE_MIN = 50;
 /**
@@ -690,8 +690,9 @@ function isOpenStageWithOtherAssignee(model){
 }
 
 /**
- * Subtask waiting counts for nudges only when overdue, due soon, or past Config expected-by.
- * PR never nudges on assignee alone (Ben / queued PR).
+ * Subtask waiting counts for nudges only on Jira due (never Config expected-by).
+ * PR: overdue only. Other stages: overdue or due soon.
+ * Config expectedBy stays in scoring/checkpoints only — not Waiting eligibility or nudge copy.
  */
 function subtaskWaitNudgeReasons(model){
   if(!isOpenStageWithOtherAssignee(model)) return null;
@@ -708,10 +709,6 @@ function subtaskWaitNudgeReasons(model){
     }
   }
 
-  if(co.expectedBy && today > atMidnight(co.expectedBy)){
-    reasons.push('past_expected');
-  }
-
   if(!reasons.length) return null;
   return { type: co.type, reasons };
 }
@@ -721,16 +718,12 @@ function isNudgeWorthySubtaskWait(model){
 }
 
 function formatSubtaskWaitWhy(model, reasons){
-  const co = model.currentOpen;
-  const st = co && co.subtask;
+  const st = model.currentOpen && model.currentOpen.subtask;
   const parts = [];
   if(reasons.indexOf('subtask_overdue') >= 0 && st && st.dueDate){
     parts.push('subtask due ' + fmtDate(st.dueDate) + ' (overdue)');
   } else if(reasons.indexOf('subtask_due_soon') >= 0 && st && st.dueDate){
     parts.push('subtask due ' + fmtDate(st.dueDate) + ' (soon)');
-  }
-  if(reasons.indexOf('past_expected') >= 0 && co.expectedBy){
-    parts.push('past expected ' + fmtDate(co.expectedBy) + ' (Config)');
   }
   return parts.join(' · ') || 'Pending with someone else';
 }
@@ -874,13 +867,9 @@ function buildWaitingNudge(ticket, model, scoring){
     const first = firstNameFromDisplay(st.assigneeName);
     const openBit = openDays != null ? ' (open ' + openDays + 'd)' : '';
     const subDueFmt = st.dueDate ? fmtDate(st.dueDate) : dueFmt;
+    // Collaborator-facing copy: Jira due only — never Config expected-by.
     let nudgeText = 'Hi ' + first + ' — gentle nudge on ' + blockerType + ' for "' + summary +
       '" (' + ticket.key + ')' + openBit + '. Subtask due ' + subDueFmt + '; parent due ' + dueFmt + '. Any ETA? Thanks!';
-    if(reasons.indexOf('past_expected') >= 0 && co.expectedBy){
-      nudgeText = 'Hi ' + first + ' — gentle nudge on ' + blockerType + ' for "' + summary +
-        '" (' + ticket.key + ')' + openBit + '. Expected by ' + fmtDate(co.expectedBy) + ' (Config). Subtask due ' +
-        subDueFmt + '. Any ETA? Thanks!';
-    }
     if(sig && sig.waitingOnImages){
       nudgeText = 'Hi ' + first + ' — gentle nudge on ' + blockerType + ' for "' + summary +
         '" (' + ticket.key + ')' + openBit + '. Still waiting on images/assets. Subtask due ' + subDueFmt + '. Any ETA? Thanks!';
