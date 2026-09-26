@@ -359,7 +359,7 @@ const SOLO_LANES = [
     omitIfEmpty: true
   },
   { id: 'action', title: 'My Action Items', hint: 'Yours to work — waiting items stay here unless urgent' },
-  { id: 'waiting', title: 'Waiting on Others', hint: 'PR: Jira subtask overdue only. Other stages: overdue or due soon. Partner/images: while craft is open and comments still block.' }
+  { id: 'waiting', title: 'Waiting on Others', hint: 'PR: Jira subtask due today or overdue. Other stages: overdue or due soon. Partner/images: while craft is open and comments still block.' }
 ];
 const DUE_SOON_DAYS = 2;
 /** Subtask Jira due within this many business days → Waiting nudge (non-PR stages). */
@@ -691,7 +691,7 @@ function isOpenStageWithOtherAssignee(model){
 
 /**
  * Subtask waiting counts for nudges only on Jira due (never Config expected-by).
- * PR: overdue only. Other stages: overdue or due soon.
+ * PR: due today or overdue (daysUntilDue <= 0). Other stages: overdue or due soon.
  * Config expectedBy stays in scoring/checkpoints only — not Waiting eligibility or nudge copy.
  */
 function subtaskWaitNudgeReasons(model){
@@ -704,6 +704,7 @@ function subtaskWaitNudgeReasons(model){
   if(st.dueDate){
     const daysUntilSubDue = businessDaysBetween(today, atMidnight(st.dueDate));
     if(daysUntilSubDue < 0) reasons.push('subtask_overdue');
+    else if(co.type === 'PR' && daysUntilSubDue === 0) reasons.push('subtask_due_today');
     else if(co.type !== 'PR' && daysUntilSubDue <= SUBTASK_DUE_SOON_DAYS){
       reasons.push('subtask_due_soon');
     }
@@ -722,6 +723,8 @@ function formatSubtaskWaitWhy(model, reasons){
   const parts = [];
   if(reasons.indexOf('subtask_overdue') >= 0 && st && st.dueDate){
     parts.push('subtask due ' + fmtDate(st.dueDate) + ' (overdue)');
+  } else if(reasons.indexOf('subtask_due_today') >= 0 && st && st.dueDate){
+    parts.push('subtask due ' + fmtDate(st.dueDate) + ' (today)');
   } else if(reasons.indexOf('subtask_due_soon') >= 0 && st && st.dueDate){
     parts.push('subtask due ' + fmtDate(st.dueDate) + ' (soon)');
   }
