@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "entries": {
+    "magic-kingdom/columbia-harbour-house": {
+      "slug": "columbia-harbour-house",
+      "parkSegment": "magic-kingdom",
+      "displayName": "Columbia Harbour House",
+      "evo": {
+        "pageTcm": "tcm:283-287148-64",
+        "itemNumber": 287148,
+        "pageTitle": "columbia-harbour-house",
+        "parentChain": []
+      },
+      "lgcy": null
+    },
+    "boardwalk/leaping-horse-libations": {
+      "slug": "leaping-horse-libations",
+      "parkSegment": "boardwalk",
+      "displayName": "Leaping Horse Libations",
+      "evo": null,
+      "lgcy": {
+        "pageTcm": "tcm:627-1018516-64",
+        "itemNumber": 1018516,
+        "pageTitle": "Leaping Horse Libations",
+        "parentChain": [
+          "tcm:627-216346-4",
+          "tcm:627-293232-4",
+          "tcm:627-293235-4",
+          "tcm:627-295188-4",
+          "tcm:627-295189-4",
+          "tcm:627-295199-4",
+          "tcm:627-295209-4"
+        ]
+      }
+    }
+  }
+}

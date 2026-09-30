@@ -1371,7 +1371,7 @@ async function loadAll(spinning){
     const data = normalizeFetchedData(await fetchJiraData());
     STATE.data = data;
     document.getElementById('greetingText').textContent =
-      data.currentUserFirstName ? 'Good morning, ' + data.currentUserFirstName : 'Good morning';
+      data.currentUserFirstName ? 'Good morning, ' + data.currentUserFirstName : 'Good morning, Marcin';
     const soloCount = ((data.activeTickets || []).length) + ((data.msSoloTickets || []).length);
     document.getElementById('greetingSub').textContent =
       soloCount
@@ -1518,6 +1518,10 @@ document.querySelectorAll('.nav-item[data-view]').forEach(el => {
     setView('viewMedia', view === 'media');
     setView('viewAlttext', view === 'alttext');
     setView('viewConfig', view === 'config');
+    setView('viewValidate', view === 'validate');
+    if(view === 'validate' && typeof initValidateView === 'function'){
+      initValidateView();
+    }
     if(view === 'horizon'){
       resetCalendarToCurrentMonth();
       STATE.horizonFilterDay = null;

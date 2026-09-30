@@ -26,6 +26,29 @@ npm start
 
 3. Open [http://127.0.0.1:3847/](http://127.0.0.1:3847/)
 
+## Validate view (ticket work)
+
+Sidebar **Validate**: paste a WDW prod dining URL (`disneyworld.disney.go.com/dining/…`) to get:
+
+- Display name, prod / stage / stage `en_CA` links
+- **EVO065** and **LGCY065** D-Scribe explorer links (Root + Building Blocks), plus page editor/folder when the slug is in the index
+
+Optional env for a full slug index (recommended on your Mac):
+
+```env
+DSCRIBE_DATA=/path/to/disney-dining-content-ops-full/data
+```
+
+Rebuild the index from the DScribe crawl:
+
+```bash
+python3 scripts/dscribe/build-dining-slug-index.py
+```
+
+Writes [`data/dining-slug-index.json`](data/dining-slug-index.json). The repo includes a small seed index for offline use; replace it after rebuilding locally.
+
+API (same logic as the UI): `GET /api/dining/resolve?url=…`
+
 ## First Jira test
 
 ```bash
@@ -43,4 +66,7 @@ Expect `OK: authenticated as …`. If it fails with 401/403, update `JIRA_API_TO
 | `jira.js` | Jira fetch via local proxy |
 | `prioritize.js` | Ranking / next-action logic |
 | `app.js` | UI wiring |
-| `server.js` | Static files + Basic Auth Jira proxy |
+| `server.js` | Static files + Jira proxy + `/api/dining/resolve` |
+| `validate.js` | Validate view UI |
+| `scripts/dscribe/` | D-Scribe link builders, dining resolve, index builder |
+| `data/dining-slug-index.json` | Slug → EVO/LGCY page metadata (rebuild from crawl) |

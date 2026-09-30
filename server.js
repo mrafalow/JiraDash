@@ -391,6 +391,18 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if(pathname === '/api/dining/resolve' && req.method === 'GET'){
+    const { resolveDiningUrl } = require('./scripts/dscribe/dining-resolve.js');
+    const raw = (u.searchParams.get('url') || '').trim();
+    if(!raw){
+      sendJson(res, 400, { ok: false, error: 'Missing url query parameter.' });
+      return;
+    }
+    const result = resolveDiningUrl(raw);
+    sendJson(res, result.ok ? 200 : 400, result);
+    return;
+  }
+
   if(pathname.startsWith('/api/')){
     sendJson(res, 404, { message: 'Unknown API route' });
     return;
