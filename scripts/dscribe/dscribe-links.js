@@ -116,7 +116,6 @@ function normalizeProdUrl(raw) {
   u.hash = '';
   let path = u.pathname;
   if (!path.endsWith('/')) path += '/';
-  u.pathname = path;
   const segments = path.split('/').filter(Boolean);
   const diningIdx = segments.indexOf('dining');
   if (diningIdx < 0) {
