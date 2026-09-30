@@ -1,3 +1,124 @@
+/* Inline D-Scribe resolver (sync with scripts/dscribe/*) — always available in browser */
+(function(){
+  'use strict';
+  if(globalThis.ValidateResolverInline) return;
+  const DSCRIBE_BASE = 'https://dpep-dscribe-production.tridion.sdlproducts.com';
+  const PUBLISH_PUBS = {
+    evo065: { id: '934', structureSourcePub: '283' },
+    lgcy065: { id: '914', structureSourcePub: '627' }
+  };
+  const ROOT = '3-4';
+  const BB = '1-2';
+  function explorerContainerUrl(pubId, segs) {
+    const parts = ['cme:publications_tcm:0-' + pubId + '-1'];
+    (segs || []).forEach((s) => parts.push(s));
+    return DSCRIBE_BASE + '/ui/explorer?container=' + parts.join('_') + '&panel=information';
+  }
+  function explorerWithItem(pubId, chain, itemTcm) {
+    const parts = ['cme:publications_tcm:0-' + pubId + '-1'];
+    (chain || []).forEach((s) => parts.push(s));
+    let url = DSCRIBE_BASE + '/ui/explorer?container=' + parts.join('_') + '&panel=information';
+    if(itemTcm) url += '&item=' + encodeURIComponent(itemTcm);
+    return url;
+  }
+  function remapTcm(tcmId, pubId) {
+    if(!tcmId || !pubId) return tcmId;
+    const p = (tcmId.split(':')[1] || '').split('-');
+    if(p.length < 2) return tcmId;
+    return p.length >= 3 ? 'tcm:' + pubId + '-' + p[1] + '-' + p[2] : 'tcm:' + pubId + '-' + p[1];
+  }
+  function pubRoot(k){ const id = PUBLISH_PUBS[k].id; return explorerContainerUrl(id, ['tcm:' + id + '-' + ROOT]); }
+  function pubBB(k){ const id = PUBLISH_PUBS[k].id; return explorerContainerUrl(id, ['tcm:' + id + '-' + BB]); }
+  function editorUrl(pubId, num){
+    const item = 'tcm:' + pubId + '-' + num + '-64';
+    return DSCRIBE_BASE + '/ui/editor/page?activeItem=' + encodeURIComponent(item) +
+      '&item=' + encodeURIComponent(item) + '&tab=general.constraints';
+  }
+  function folderExplorer(k, chain, num){
+    const pub = PUBLISH_PUBS[k];
+    if(!pub || !num) return null;
+    const c = ['tcm:' + pub.id + '-' + ROOT];
+    (chain || []).forEach((id) => c.push(remapTcm(id, pub.id)));
+    return explorerWithItem(pub.id, c, 'tcm:' + pub.id + '-' + num + '-64');
+  }
+  function titleCase(slug){
+    return String(slug || '').split('-').filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  }
+  function normalizeProdUrl(raw){
+    const trimmed = String(raw || '').trim();
+    if(!trimmed) return { error: 'Paste a URL first.' };
+    let u;
+    try { u = new URL(trimmed); } catch (_) { return { error: 'Invalid URL.' }; }
+    if(!u.hostname.toLowerCase().includes('disney.go.com')) return { error: 'Expected a disney.go.com URL (v1: WDW dining).' };
+    u.search = ''; u.hash = '';
+    let path = u.pathname;
+    if(!path.endsWith('/')) path += '/';
+    const segments = path.split('/').filter(Boolean);
+    const di = segments.indexOf('dining');
+    if(di < 0) return { error: 'URL path should include /dining/…' };
+    const after = segments.slice(di + 1);
+    if(!after.length) return { error: 'Missing facility slug after /dining/.' };
+    const slug = after[after.length - 1];
+    const park = after.length > 1 ? after[0] : '';
+    u.pathname = '/dining/' + after.join('/') + '/';
+    return { prodUrl: u.toString(), slug, parkSegment: park, lookupKey: park ? park + '/' + slug : slug };
+  }
+  function stageFromProd(prodUrl, loc){
+    const u = new URL(prodUrl);
+    if(!u.hostname.startsWith('stage.')) u.hostname = 'stage.' + u.hostname;
+    if(loc){
+      const seg = loc.replace(/^\/+|\/+$/g, '');
+      const parts = u.pathname.split('/').filter(Boolean);
+      if(parts[0] !== seg) u.pathname = '/' + seg + u.pathname;
+    }
+    return u.toString();
+  }
+  const links = {
+    PUBLISH_PUBS, remapTcmToPublishPub: remapTcm, publicationRootExplorer: pubRoot,
+    publicationBuildingBlocksExplorer: pubBB, editorPageUrl: editorUrl, pageFolderExplorer: folderExplorer,
+    titleCaseSlug: titleCase, normalizeProdUrl, stageUrlFromProd: stageFromProd
+  };
+  function lookupEntry(entries, lookupKey, slug){
+    if(!entries) return null;
+    if(entries[lookupKey]) return entries[lookupKey];
+    if(entries[slug]) return entries[slug];
+    for(const k of Object.keys(entries)){
+      if(k.endsWith('/' + slug) || k === slug) return entries[k];
+    }
+    return null;
+  }
+  function treePayload(pubKey, pageEntry){
+    const pub = links.PUBLISH_PUBS[pubKey];
+    if(!pageEntry){
+      return {
+        pageTcm: null, pageTitle: null, editorPageUrl: null, explorerFolderUrl: null,
+        publicationRootUrl: pubRoot(pubKey), publicationBuildingBlocksUrl: pubBB(pubKey),
+        note: 'No structure page in index for this slug.'
+      };
+    }
+    const n = pageEntry.itemNumber;
+    return {
+      pageTcm: remapTcm(pageEntry.pageTcm, pub.id), pageTitle: pageEntry.pageTitle,
+      editorPageUrl: editorUrl(pub.id, n), explorerFolderUrl: folderExplorer(pubKey, pageEntry.parentChain, n),
+      publicationRootUrl: pubRoot(pubKey), publicationBuildingBlocksUrl: pubBB(pubKey), note: null
+    };
+  }
+  function resolveDiningUrl(rawUrl, entries){
+    const norm = normalizeProdUrl(rawUrl);
+    if(norm.error) return { ok: false, error: norm.error };
+    const entry = lookupEntry(entries, norm.lookupKey, norm.slug);
+    const displayName = entry ? (entry.displayName || titleCase(norm.slug)) : titleCase(norm.slug);
+    const warnings = [];
+    if(!entry) warnings.push('Slug not found in dining index — showing title from URL only. Rebuild data/dining-slug-index.json from crawl.');
+    return {
+      ok: true, slug: norm.slug, parkSegment: norm.parkSegment, lookupKey: norm.lookupKey, displayName,
+      prodUrl: norm.prodUrl, stageUrl: stageFromProd(norm.prodUrl), stageUrlEnCa: stageFromProd(norm.prodUrl, 'en_CA'),
+      evo: treePayload('evo065', entry && entry.evo), lgcy: treePayload('lgcy065', entry && entry.lgcy), warnings
+    };
+  }
+  globalThis.ValidateResolverInline = { links, resolveDiningUrl };
+})();
+
 /* Validate view — paste prod dining URL, get forward links */
 (function(){
   'use strict';
@@ -95,15 +216,68 @@
     }).catch(() => {});
   }
 
-  async function resolveInBrowser(raw){
-    const links = globalThis.DScribeLinks;
-    const core = globalThis.DiningResolveCore;
-    if(!links || !core){
-      return {
-        ok: false,
-        error: 'Offline resolver scripts missing. Hard refresh the page (Cmd+Shift+R).'
-      };
+  function coerceDiningInput(raw){
+    const t = String(raw || '').trim();
+    if(!t) return t;
+    if(/^https?:\/\//i.test(t)) return t;
+    let path = t.replace(/^\/+/, '');
+    if(path.indexOf('dining/') !== 0 && path.indexOf('dining/') === -1){
+      path = 'dining/' + path;
+    } else if(path.indexOf('dining/') > 0){
+      path = path.slice(path.indexOf('dining/'));
     }
+    if(!path.endsWith('/')) path += '/';
+    return 'https://disneyworld.disney.go.com/' + path;
+  }
+
+  function shouldAutoResolve(value){
+    const v = String(value || '').trim();
+    if(v.length < 10) return false;
+    if(/disney\.go\.com/i.test(v)) return true;
+    return /dining\/[^/]+\/[^/]+/.test(v.replace(/^\/+/, ''));
+  }
+
+  function loadScriptOnce(src){
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-validate-src="' + src + '"]');
+      if(existing){
+        existing.addEventListener('load', () => resolve());
+        existing.addEventListener('error', () => reject(new Error(src)));
+        if(existing.dataset.loaded === '1') resolve();
+        return;
+      }
+      const el = document.createElement('script');
+      el.src = src;
+      el.async = false;
+      el.dataset.validateSrc = src;
+      el.onload = () => { el.dataset.loaded = '1'; resolve(); };
+      el.onerror = () => reject(new Error('Could not load ' + src));
+      document.head.appendChild(el);
+    });
+  }
+
+  async function ensureResolverModules(){
+    if(globalThis.ValidateResolverInline) return true;
+    if(globalThis.DScribeLinks && globalThis.DiningResolveCore) return true;
+    const tries = [
+      'validate-resolver-inline.js',
+      'scripts/dscribe/dscribe-links.js',
+      'scripts/dscribe/dining-resolve-core.js'
+    ];
+    for(const src of tries){
+      try {
+        await loadScriptOnce(src);
+      } catch (_) {}
+      if(globalThis.ValidateResolverInline) return true;
+      if(globalThis.DScribeLinks && globalThis.DiningResolveCore) return true;
+    }
+    return !!(globalThis.ValidateResolverInline ||
+      (globalThis.DScribeLinks && globalThis.DiningResolveCore));
+  }
+
+  async function resolveInBrowser(raw){
+    const coerced = coerceDiningInput(raw);
+    await ensureResolverModules();
     let entries = {};
     try {
       const idxRes = await fetch('/data/dining-slug-index.json');
@@ -112,7 +286,18 @@
         entries = idx.entries || idx;
       }
     } catch (_) {}
-    const data = core.resolveDiningUrl(raw, links, entries);
+
+    let data;
+    if(globalThis.ValidateResolverInline){
+      data = globalThis.ValidateResolverInline.resolveDiningUrl(coerced, entries);
+    } else if(globalThis.DScribeLinks && globalThis.DiningResolveCore){
+      data = globalThis.DiningResolveCore.resolveDiningUrl(coerced, globalThis.DScribeLinks, entries);
+    } else {
+      return {
+        ok: false,
+        error: 'Resolver failed to load. Hard refresh (Cmd+Shift+R), then git pull and restart npm start from the JiraDash folder.'
+      };
+    }
     if(data.ok){
       data.warnings = (data.warnings || []).slice();
       data.warnings.unshift('Resolved locally (index + link map). Restart npm start to use /api/dining/resolve.');
@@ -125,10 +310,11 @@
   }
 
   async function resolveUrl(raw){
+    const coerced = coerceDiningInput(raw);
     const out = document.getElementById('validateResults');
     if(out) out.innerHTML = '<div class="loading-wrap"><div class="spinner"></div>Resolving&hellip;</div>';
     try{
-      const res = await fetch('/api/dining/resolve?url=' + encodeURIComponent(raw));
+      const res = await fetch('/api/dining/resolve?url=' + encodeURIComponent(coerced));
       let data;
       try {
         data = await res.json();
@@ -140,7 +326,7 @@
         return;
       }
       if(apiRouteMissing(data, res.status)){
-        renderResult(await resolveInBrowser(raw));
+        renderResult(await resolveInBrowser(coerced));
         return;
       }
       if(data.ok !== true){
@@ -180,7 +366,9 @@
       if(e.key === 'Enter') run();
     });
     input.addEventListener('paste', () => {
-      setTimeout(run, 0);
+      setTimeout(() => {
+        if(shouldAutoResolve(input.value)) run();
+      }, 0);
     });
   }
 

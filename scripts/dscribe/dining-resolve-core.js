@@ -82,8 +82,9 @@ function resolveDiningUrl(rawUrl, links, entries) {
 
 const api = { lookupEntry, treePayload, resolveDiningUrl };
 
+if (typeof globalThis !== 'undefined') {
+  globalThis.DiningResolveCore = api;
+}
 if (typeof module === 'object' && module.exports) {
   module.exports = api;
-} else if (typeof globalThis !== 'undefined') {
-  globalThis.DiningResolveCore = api;
 }

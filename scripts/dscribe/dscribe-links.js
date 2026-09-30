@@ -128,6 +128,9 @@ function normalizeProdUrl(raw) {
   const slug = after[after.length - 1];
   const parkSegment = after.length > 1 ? after[0] : '';
   const lookupKey = parkSegment ? parkSegment + '/' + slug : slug;
+  // Canonical US prod path (strip locale prefix like en_CA before /dining/)
+  const canonicalPath = '/dining/' + after.join('/') + (after.length ? '' : '');
+  u.pathname = canonicalPath.endsWith('/') ? canonicalPath : canonicalPath + '/';
   return {
     prodUrl: u.toString(),
     slug,
@@ -167,8 +170,9 @@ const api = {
   stageUrlFromProd
 };
 
+if (typeof globalThis !== 'undefined') {
+  globalThis.DScribeLinks = api;
+}
 if (typeof module === 'object' && module.exports) {
   module.exports = api;
-} else if (typeof globalThis !== 'undefined') {
-  globalThis.DScribeLinks = api;
 }
