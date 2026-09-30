@@ -49,6 +49,13 @@ Writes [`data/dining-slug-index.json`](data/dining-slug-index.json). The repo in
 
 API (same logic as the UI): `GET /api/dining/resolve?url=…`
 
+If the server was started before Validate landed, the UI falls back to the browser: `data/dining-slug-index.json` + `scripts/dscribe/dscribe-links.js` (same EVO/LGCY publish pub IDs as the WDW-194122 inventory). Restart `npm start` and confirm the console line `Validate: /api/dining/resolve ready`.
+
+| Publication | Publish pub | Structure crawl pub | Root folder | Building Blocks |
+|-------------|-------------|---------------------|-------------|-----------------|
+| EVO065 WDW Parent (All) Publish | 934 | 283 | `tcm:934-3-4` | `tcm:934-1-2` |
+| LGCY065 Parent (All) Publish | 914 | 627 | `tcm:914-3-4` | `tcm:914-1-2` |
+
 ## First Jira test
 
 ```bash

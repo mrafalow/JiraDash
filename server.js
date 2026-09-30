@@ -429,6 +429,12 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('Studio Titan local server');
   console.log('  Dashboard: http://127.0.0.1:' + PORT + '/');
   console.log('  Health:    http://127.0.0.1:' + PORT + '/api/health');
+  let diningOk = false;
+  try {
+    require.resolve('./scripts/dscribe/dining-resolve.js');
+    diningOk = true;
+  } catch (_) {}
+  console.log('  Validate:  ' + (diningOk ? '/api/dining/resolve ready' : 'MISSING — git pull + restart'));
   if(cfg0.missing.length){
     console.log('  WARNING: missing ' + cfg0.missing.join(', ') + ' in .env');
     return;

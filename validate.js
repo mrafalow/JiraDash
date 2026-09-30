@@ -95,6 +95,35 @@
     }).catch(() => {});
   }
 
+  async function resolveInBrowser(raw){
+    const links = globalThis.DScribeLinks;
+    const core = globalThis.DiningResolveCore;
+    if(!links || !core){
+      return {
+        ok: false,
+        error: 'Offline resolver scripts missing. Hard refresh the page (Cmd+Shift+R).'
+      };
+    }
+    let entries = {};
+    try {
+      const idxRes = await fetch('/data/dining-slug-index.json');
+      if(idxRes.ok){
+        const idx = await idxRes.json();
+        entries = idx.entries || idx;
+      }
+    } catch (_) {}
+    const data = core.resolveDiningUrl(raw, links, entries);
+    if(data.ok){
+      data.warnings = (data.warnings || []).slice();
+      data.warnings.unshift('Resolved locally (index + link map). Restart npm start to use /api/dining/resolve.');
+    }
+    return data;
+  }
+
+  function apiRouteMissing(data, status){
+    return status === 404 && data && data.message === 'Unknown API route';
+  }
+
   async function resolveUrl(raw){
     const out = document.getElementById('validateResults');
     if(out) out.innerHTML = '<div class="loading-wrap"><div class="spinner"></div>Resolving&hellip;</div>';
@@ -108,6 +137,10 @@
           ok: false,
           error: 'Server returned a non-JSON response (HTTP ' + res.status + '). Restart npm start after pulling the latest code.'
         });
+        return;
+      }
+      if(apiRouteMissing(data, res.status)){
+        renderResult(await resolveInBrowser(raw));
         return;
       }
       if(data.ok !== true){

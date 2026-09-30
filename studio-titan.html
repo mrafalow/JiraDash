@@ -114,7 +114,7 @@
     <div id="viewValidate" style="display:none;">
       <section class="panel-block">
         <div class="section-title">TICKET WORK &mdash; PASTE PROD URL</div>
-        <p class="validate-hint">Paste a WDW dining production URL to generate stage and D-Scribe links (EVO065 and LGCY065).</p>
+        <p class="validate-hint">Paste a WDW dining production URL to generate stage and D-Scribe links. Publish trees: <strong>EVO065</strong> (pub 934, structure source 283) and <strong>LGCY065</strong> (pub 914, structure source 627). Root = <code>tcm:&hellip;-3-4</code>, Building Blocks = <code>tcm:&hellip;-1-2</code>. No VPN cookie required for Resolve.</p>
         <div class="validate-input-row">
           <input type="url" id="validateUrlInput" class="validate-url-input" placeholder="https://disneyworld.disney.go.com/dining/…" spellcheck="false" autocomplete="off">
           <button type="button" class="refresh-btn" id="validateResolveBtn">Resolve</button>
@@ -237,6 +237,8 @@
 
 <script src="prioritize.js"></script>
 <script src="jira.js"></script>
+<script src="scripts/dscribe/dscribe-links.js"></script>
+<script src="scripts/dscribe/dining-resolve-core.js"></script>
 <script src="validate.js"></script>
 <script src="app.js"></script>
 </body>
