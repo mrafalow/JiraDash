@@ -359,6 +359,11 @@ const server = http.createServer((req, res) => {
 
   if(pathname === '/api/health'){
     const cfg0 = getJiraConfig();
+    let diningResolve = false;
+    try {
+      require.resolve('./scripts/dscribe/dining-resolve.js');
+      diningResolve = true;
+    } catch (_) {}
     ensureCloudId(cfg0).then((cfg) => {
       const cloudIdFromEnv = !!(process.env.JIRA_CLOUD_ID || '').trim();
       sendJson(res, 200, {
@@ -368,7 +373,8 @@ const server = http.createServer((req, res) => {
         usingCloudId: !!cfg.cloudId,
         cloudIdSource: cfg.cloudId ? (cloudIdFromEnv ? 'env' : 'tenant_info') : null,
         route: jiraRoute || (cfg.cloudId && !useSiteApiOnly() ? 'gateway (initial)' : 'site'),
-        site: cfg.cloudId ? ('api.atlassian.com/ex/jira/' + cfg.cloudId) : cfg.baseUrl
+        site: cfg.cloudId ? ('api.atlassian.com/ex/jira/' + cfg.cloudId) : cfg.baseUrl,
+        diningResolveApi: diningResolve
       });
     });
     return;
@@ -392,14 +398,21 @@ const server = http.createServer((req, res) => {
   }
 
   if(pathname === '/api/dining/resolve' && req.method === 'GET'){
-    const { resolveDiningUrl } = require('./scripts/dscribe/dining-resolve.js');
-    const raw = (u.searchParams.get('url') || '').trim();
-    if(!raw){
-      sendJson(res, 400, { ok: false, error: 'Missing url query parameter.' });
-      return;
+    try {
+      const { resolveDiningUrl } = require('./scripts/dscribe/dining-resolve.js');
+      const raw = (u.searchParams.get('url') || '').trim();
+      if(!raw){
+        sendJson(res, 400, { ok: false, error: 'Missing url query parameter.' });
+        return;
+      }
+      const result = resolveDiningUrl(raw);
+      sendJson(res, result.ok ? 200 : 400, result);
+    } catch (err) {
+      sendJson(res, 500, {
+        ok: false,
+        error: 'Validate resolver failed: ' + (err && err.message ? err.message : String(err))
+      });
     }
-    const result = resolveDiningUrl(raw);
-    sendJson(res, result.ok ? 200 : 400, result);
     return;
   }
 

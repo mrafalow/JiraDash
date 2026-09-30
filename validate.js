@@ -100,10 +100,33 @@
     if(out) out.innerHTML = '<div class="loading-wrap"><div class="spinner"></div>Resolving&hellip;</div>';
     try{
       const res = await fetch('/api/dining/resolve?url=' + encodeURIComponent(raw));
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch (_) {
+        renderResult({
+          ok: false,
+          error: 'Server returned a non-JSON response (HTTP ' + res.status + '). Restart npm start after pulling the latest code.'
+        });
+        return;
+      }
+      if(data.ok !== true){
+        const msg =
+          data.error ||
+          data.message ||
+          (res.status === 404
+            ? 'Validate API not found. Stop the server (Ctrl+C) and run npm start again from the repo root after git pull.'
+            : 'Could not resolve URL (HTTP ' + res.status + ').');
+        renderResult({ ok: false, error: msg });
+        return;
+      }
       renderResult(data);
     } catch(err){
-      renderResult({ ok: false, error: err.message });
+      renderResult({
+        ok: false,
+        error: (err && err.message ? err.message : 'Request failed') +
+          '. Use http://127.0.0.1:3847/ (npm start), not a file:// URL.'
+      });
     }
   }
 
