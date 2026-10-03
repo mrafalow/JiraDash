@@ -185,26 +185,47 @@ function buildStageModel(ticket){
   };
 }
 
+/**
+ * Due-urgency floor from parent due (business days — same basis as daysUntilDue).
+ * Option C: displayed score = max(pipelineScore, dueUrgencyScore).
+ * Tuned so Due In 2d (Attention band) badges ~45, not 0, and stays below a true 75.
+ */
+function dueUrgencyScore(daysUntilDue){
+  if(typeof daysUntilDue !== 'number' || !Number.isFinite(daysUntilDue)) return 0;
+  if(daysUntilDue <= -3) return 100;
+  if(daysUntilDue === -2) return 95;
+  if(daysUntilDue === -1) return 90;
+  if(daysUntilDue === 0) return 75;
+  if(daysUntilDue === 1) return 50;
+  if(daysUntilDue === 2) return 45;
+  return 0;
+}
+
+function bandForScore(score){
+  if(score >= 75) return 'red';
+  if(score >= 50) return 'orange';
+  if(score >= 25) return 'gold';
+  return 'blue';
+}
+
 function computeScore(ticket, model){
   const today = todayMid();
   const daysUntilDue = businessDaysBetween(today, model.dueDate);
+  const dueUrg = dueUrgencyScore(daysUntilDue);
 
   const nothingStartedAndDueNow = model.actualIndex === 0 && daysUntilDue <= 0;
   if(nothingStartedAndDueNow){
-    return { score: 100, band: 'red', daysUntilDue };
+    const score = Math.max(100, dueUrg);
+    return { score, band: bandForScore(score), daysUntilDue };
   }
 
   const urgencyMult = Math.max(URGENCY.MIN_MULT, Math.min(URGENCY.MAX_MULT, URGENCY.MAX_MULT - daysUntilDue * URGENCY.DECAY_PER_DAY));
   const priorityMult = PRIORITY_MULT[ticket.priority] || 1.0;
   const raw = model.stageGap * urgencyMult * SCORE_SCALE * priorityMult;
-  const score = Math.max(0, Math.min(100, Math.round(raw)));
+  const pipelineScore = Math.max(0, Math.min(100, Math.round(raw)));
+  const score = Math.max(pipelineScore, dueUrg);
 
-  let band = 'blue';
-  if(score >= 75) band = 'red';
-  else if(score >= 50) band = 'orange';
-  else if(score >= 25) band = 'gold';
-
-  return { score, band, daysUntilDue };
+  return { score, band: bandForScore(score), daysUntilDue };
 }
 
 const BAND_COLOR = { red:'var(--band-red)', orange:'var(--band-orange)', gold:'var(--band-gold)', blue:'var(--band-blue)' };
@@ -338,10 +359,10 @@ const SOLO_LANES = [
     omitIfEmpty: true
   },
   { id: 'action', title: 'My Action Items', hint: 'Yours to work — waiting items stay here unless urgent' },
-  { id: 'waiting', title: 'Waiting on Others', hint: 'PR: overdue or past expected only. Other stages: due soon too. Partner/images: while craft is open and comments still block.' }
+  { id: 'waiting', title: 'Waiting on Others', hint: 'PR: Jira subtask due today or overdue. Other stages: overdue or due soon. Partner/images: while craft is open and comments still block.' }
 ];
 const DUE_SOON_DAYS = 2;
-/** Subtask Jira due within this many business days → Waiting nudge (incl. PR). */
+/** Subtask Jira due within this many business days → Waiting nudge (non-PR stages). */
 const SUBTASK_DUE_SOON_DAYS = 2;
 const ATTENTION_SCORE_MIN = 50;
 /**
@@ -355,8 +376,8 @@ const PR_REVIEW_TURNAROUND_DAYS = 1;
  * after MS handoff (prefer WDW→CONTENT key-change; else CONTENT created).
  */
 const MS_CHECKIN_CALENDAR_DAYS = 3;
-/** Hard MS stall: due within this many calendar days (or overdue), still with MS. */
-const MS_STALL_DUE_WITHIN_DAYS = 10;
+/** Hard MS publish watch: parent due within this many business days (or overdue), still with MS. */
+const MS_STALL_DUE_WITHIN_DAYS = 3;
 
 /** Calendar (not business) day delta from start → end at midnight. */
 function calendarDaysBetween(start, end){
@@ -482,20 +503,27 @@ function isMsCheckinSoft(ticket, msSoloKeys){
   return ageCal >= MS_CHECKIN_CALENDAR_DAYS;
 }
 
+function msStallBusinessDaysUntilDue(ticket){
+  if(!ticket || !ticket.dueDate) return null;
+  return businessDaysBetween(todayMid(), atMidnight(ticket.dueDate));
+}
+
 /**
- * Hard MS stall: due exists and ≤10 calendar days away (or overdue), still with MS.
+ * Hard MS publish watch: parent due ≤3 business days away (or overdue), still with MS.
  * Inject into Needs Attention — no Solo pipeline scoring.
  */
 function isMsStallHard(ticket, msSoloKeys){
   if(!isStillWithManagedServices(ticket, msSoloKeys)) return false;
   if(!ticket.dueDate) return false;
-  const daysUntilDue = calendarDaysBetween(todayMid(), atMidnight(ticket.dueDate));
+  const daysUntilDue = msStallBusinessDaysUntilDue(ticket);
+  if(typeof daysUntilDue !== 'number' || !Number.isFinite(daysUntilDue)) return false;
   return daysUntilDue <= MS_STALL_DUE_WITHIN_DAYS;
 }
 
 function msStallReason(ticket){
   if(!ticket || !ticket.dueDate) return 'MS stall';
-  const days = calendarDaysBetween(todayMid(), atMidnight(ticket.dueDate));
+  const days = msStallBusinessDaysUntilDue(ticket);
+  if(typeof days !== 'number') return 'MS stall';
   if(days < 0) return 'Past due — still with MS';
   if(days <= MS_STALL_DUE_WITHIN_DAYS) return 'Due soon — still with MS';
   return 'MS stall';
@@ -503,10 +531,11 @@ function msStallReason(ticket){
 
 function msStallCalendarDueLabel(ticket){
   if(!ticket || !ticket.dueDate) return '—';
-  const days = calendarDaysBetween(todayMid(), atMidnight(ticket.dueDate));
+  const days = msStallBusinessDaysUntilDue(ticket);
+  if(typeof days !== 'number') return '—';
   if(days === 0) return 'Today';
-  if(days < 0) return Math.abs(days) + 'd overdue';
-  return 'In ' + days + 'd';
+  if(days < 0) return Math.abs(days) + 'bd overdue';
+  return 'In ' + days + 'bd';
 }
 
 function collectMsCheckinTickets(data){
@@ -514,16 +543,18 @@ function collectMsCheckinTickets(data){
   return ((data && data.contentTickets) || []).filter(t => isMsCheckinSoft(t, msSoloKeys));
 }
 
-/** Hard stalls from CONTENT portfolio minus MS Solo — sorted by due date ascending. */
+/** Hard stalls from CONTENT portfolio minus MS Solo — sorted by business days until due. */
 function collectMsStallTickets(data){
   const msSoloKeys = msSoloKeySet(data);
   return ((data && data.contentTickets) || [])
     .filter(t => isMsStallHard(t, msSoloKeys))
     .slice()
     .sort((a, b) => {
-      const da = a.dueDate ? atMidnight(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
-      const db = b.dueDate ? atMidnight(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
-      if(da !== db) return da - db;
+      const da = msStallBusinessDaysUntilDue(a);
+      const db = msStallBusinessDaysUntilDue(b);
+      const na = typeof da === 'number' ? da : Number.POSITIVE_INFINITY;
+      const nb = typeof db === 'number' ? db : Number.POSITIVE_INFINITY;
+      if(na !== nb) return na - nb;
       return String(a.key || '').localeCompare(String(b.key || ''));
     });
 }
@@ -669,8 +700,9 @@ function isOpenStageWithOtherAssignee(model){
 }
 
 /**
- * Subtask waiting counts for nudges only when overdue, due soon, or past Config expected-by.
- * PR never nudges on assignee alone (Ben / queued PR).
+ * Subtask waiting counts for nudges only on Jira due (never Config expected-by).
+ * PR: due today or overdue (daysUntilDue <= 0). Other stages: overdue or due soon.
+ * Config expectedBy stays in scoring/checkpoints only — not Waiting eligibility or nudge copy.
  */
 function subtaskWaitNudgeReasons(model){
   if(!isOpenStageWithOtherAssignee(model)) return null;
@@ -682,13 +714,10 @@ function subtaskWaitNudgeReasons(model){
   if(st.dueDate){
     const daysUntilSubDue = businessDaysBetween(today, atMidnight(st.dueDate));
     if(daysUntilSubDue < 0) reasons.push('subtask_overdue');
+    else if(co.type === 'PR' && daysUntilSubDue === 0) reasons.push('subtask_due_today');
     else if(co.type !== 'PR' && daysUntilSubDue <= SUBTASK_DUE_SOON_DAYS){
       reasons.push('subtask_due_soon');
     }
-  }
-
-  if(co.expectedBy && today > atMidnight(co.expectedBy)){
-    reasons.push('past_expected');
   }
 
   if(!reasons.length) return null;
@@ -700,16 +729,14 @@ function isNudgeWorthySubtaskWait(model){
 }
 
 function formatSubtaskWaitWhy(model, reasons){
-  const co = model.currentOpen;
-  const st = co && co.subtask;
+  const st = model.currentOpen && model.currentOpen.subtask;
   const parts = [];
   if(reasons.indexOf('subtask_overdue') >= 0 && st && st.dueDate){
     parts.push('subtask due ' + fmtDate(st.dueDate) + ' (overdue)');
+  } else if(reasons.indexOf('subtask_due_today') >= 0 && st && st.dueDate){
+    parts.push('subtask due ' + fmtDate(st.dueDate) + ' (today)');
   } else if(reasons.indexOf('subtask_due_soon') >= 0 && st && st.dueDate){
     parts.push('subtask due ' + fmtDate(st.dueDate) + ' (soon)');
-  }
-  if(reasons.indexOf('past_expected') >= 0 && co.expectedBy){
-    parts.push('past expected ' + fmtDate(co.expectedBy) + ' (Config)');
   }
   return parts.join(' · ') || 'Pending with someone else';
 }
@@ -853,13 +880,9 @@ function buildWaitingNudge(ticket, model, scoring){
     const first = firstNameFromDisplay(st.assigneeName);
     const openBit = openDays != null ? ' (open ' + openDays + 'd)' : '';
     const subDueFmt = st.dueDate ? fmtDate(st.dueDate) : dueFmt;
+    // Collaborator-facing copy: Jira due only — never Config expected-by.
     let nudgeText = 'Hi ' + first + ' — gentle nudge on ' + blockerType + ' for "' + summary +
       '" (' + ticket.key + ')' + openBit + '. Subtask due ' + subDueFmt + '; parent due ' + dueFmt + '. Any ETA? Thanks!';
-    if(reasons.indexOf('past_expected') >= 0 && co.expectedBy){
-      nudgeText = 'Hi ' + first + ' — gentle nudge on ' + blockerType + ' for "' + summary +
-        '" (' + ticket.key + ')' + openBit + '. Expected by ' + fmtDate(co.expectedBy) + ' (Config). Subtask due ' +
-        subDueFmt + '. Any ETA? Thanks!';
-    }
     if(sig && sig.waitingOnImages){
       nudgeText = 'Hi ' + first + ' — gentle nudge on ' + blockerType + ' for "' + summary +
         '" (' + ticket.key + ')' + openBit + '. Still waiting on images/assets. Subtask due ' + subDueFmt + '. Any ETA? Thanks!';

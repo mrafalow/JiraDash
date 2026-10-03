@@ -359,6 +359,11 @@ const server = http.createServer((req, res) => {
 
   if(pathname === '/api/health'){
     const cfg0 = getJiraConfig();
+    let diningResolve = false;
+    try {
+      require.resolve('./scripts/dscribe/dining-resolve.js');
+      diningResolve = true;
+    } catch (_) {}
     ensureCloudId(cfg0).then((cfg) => {
       const cloudIdFromEnv = !!(process.env.JIRA_CLOUD_ID || '').trim();
       sendJson(res, 200, {
@@ -368,7 +373,8 @@ const server = http.createServer((req, res) => {
         usingCloudId: !!cfg.cloudId,
         cloudIdSource: cfg.cloudId ? (cloudIdFromEnv ? 'env' : 'tenant_info') : null,
         route: jiraRoute || (cfg.cloudId && !useSiteApiOnly() ? 'gateway (initial)' : 'site'),
-        site: cfg.cloudId ? ('api.atlassian.com/ex/jira/' + cfg.cloudId) : cfg.baseUrl
+        site: cfg.cloudId ? ('api.atlassian.com/ex/jira/' + cfg.cloudId) : cfg.baseUrl,
+        diningResolveApi: diningResolve
       });
     });
     return;
@@ -391,6 +397,88 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if(pathname === '/api/dscribe/session'){
+    const session = require('./scripts/dscribe/dscribe-session.js');
+    if(req.method === 'GET'){
+      session.validateCookie().then((v) => {
+        sendJson(res, 200, {
+          configured: !!session.getCookie(),
+          valid: !!v.ok,
+          status: v.status || 0,
+          error: v.error || null
+        });
+      });
+      return;
+    }
+    if(req.method === 'POST'){
+      readRequestBody(req).then((buf) => {
+        let body = {};
+        if(buf && buf.length){
+          try { body = JSON.parse(buf.toString('utf8')); } catch (_) { body = {}; }
+        }
+        const cookie = (body && body.cookie) ? String(body.cookie).trim() : '';
+        if(!cookie){
+          session.clearCookie();
+          sendJson(res, 200, { ok: true, configured: false, valid: false });
+          return;
+        }
+        session.setCookie(cookie);
+        return session.validateCookie(cookie).then((v) => {
+          if(!v.ok){
+            session.clearCookie();
+            sendJson(res, 400, { ok: false, error: v.error || 'Invalid DScribe cookie.' });
+            return;
+          }
+          sendJson(res, 200, { ok: true, configured: true, valid: true });
+        });
+      }).catch((err) => {
+        sendJson(res, 400, { ok: false, error: err && err.message ? err.message : String(err) });
+      });
+      return;
+    }
+    sendJson(res, 405, { ok: false, error: 'Method not allowed' });
+    return;
+  }
+
+  if(pathname === '/api/dining/resolve' && req.method === 'GET'){
+    const { resolveDiningUrl } = require('./scripts/dscribe/dining-resolve.js');
+    const raw = (u.searchParams.get('url') || '').trim();
+    if(!raw){
+      sendJson(res, 400, { ok: false, error: 'Missing url query parameter.' });
+      return;
+    }
+    Promise.resolve(resolveDiningUrl(raw))
+      .then((result) => {
+        sendJson(res, result.ok ? 200 : 400, result);
+      })
+      .catch((err) => {
+        sendJson(res, 500, {
+          ok: false,
+          error: 'Validate resolver failed: ' + (err && err.message ? err.message : String(err))
+        });
+      });
+    return;
+  }
+
+  if(pathname === '/api/dining/graph' && req.method === 'GET'){
+    const { buildGraphForUrl } = require('./scripts/dscribe/dining-graph.js');
+    const raw = (u.searchParams.get('url') || '').trim();
+    if(!raw){
+      sendJson(res, 400, { ok: false, error: 'Missing url query parameter.' });
+      return;
+    }
+    try {
+      const result = buildGraphForUrl(raw);
+      sendJson(res, result.ok ? 200 : 400, result);
+    } catch (err) {
+      sendJson(res, 500, {
+        ok: false,
+        error: 'Graph builder failed: ' + (err && err.message ? err.message : String(err))
+      });
+    }
+    return;
+  }
+
   if(pathname.startsWith('/api/')){
     sendJson(res, 404, { message: 'Unknown API route' });
     return;
@@ -404,6 +492,12 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('Studio Titan local server');
   console.log('  Dashboard: http://127.0.0.1:' + PORT + '/');
   console.log('  Health:    http://127.0.0.1:' + PORT + '/api/health');
+  let diningOk = false;
+  try {
+    require.resolve('./scripts/dscribe/dining-resolve.js');
+    diningOk = true;
+  } catch (_) {}
+  console.log('  Validate:  ' + (diningOk ? '/api/dining/resolve ready' : 'MISSING — git pull + restart'));
   if(cfg0.missing.length){
     console.log('  WARNING: missing ' + cfg0.missing.join(', ') + ' in .env');
     return;

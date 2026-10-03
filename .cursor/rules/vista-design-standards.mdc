@@ -1,0 +1,31 @@
+---
+description: Canonical VISTA (DX Marketplace) design system — use for all UI/design work
+alwaysApply: true
+---
+
+# VISTA design standards
+
+For **any UI, UX, or visual design work** in this project, treat **VISTA** as the single source of truth—not ad-hoc styles or generic component libraries.
+
+## Canonical docs (Storybook)
+
+- **Base:** https://marketplace.wdprapps.disney.com/storybook/
+- **Changelog / release notes:** https://marketplace.wdprapps.disney.com/storybook/?path=/docs/changelog--docs
+- **Product:** RA Web Components — **Vista Library** (DX Marketplace)
+
+## What to follow from Storybook
+
+- **Architecture:** Configure Web Components, Angular, or React per project stack
+- **Theme:** Typography (modes, size ramps), Colors, Motion tokens, Theme Colors
+- **Components:** Use documented `wdpr-*` patterns and props; prefer library components over one-offs
+- **Toolbar context:** Global theme (e.g. Vista — Parks Now), typography **Mode** (`data-mode` tiers), responsive typography when Mode is Auto
+
+## Agent access
+
+- Internal `wdprapps.disney.com` URLs often **fail** via server-side fetch; use the **Cursor browser** to open Storybook on the user’s network/VPN when verifying specs, changelog entries, or component APIs.
+
+## Design work checklist
+
+1. Check Storybook for the relevant component or theme doc before implementing.
+2. Match tokens (typography, color, motion)—do not invent parallel naming.
+3. Note library version from **Changelog** when behavior or props may have changed recently.
