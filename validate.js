@@ -14,7 +14,29 @@
   function explorerContainerUrl(pubId, segs) {
     const parts = ['cme:publications_tcm:0-' + pubId + '-1'];
     (segs || []).forEach((s) => parts.push(s));
-    return DSCRIBE_BASE + '/ui/#/explorer?container=' + parts.join('_') + '&panel=information';
+    return DSCRIBE_BASE + '/ui/explorer?container=' + parts.join('_') + '&panel=information';
+  }
+  function sourcePubFromChain(chain) {
+    if(!chain || !chain.length) return '';
+    return (String(chain[0]).split(':')[1] || '').split('-')[0] || '';
+  }
+  function facilityExplorer(pubKey, kind, folderChain) {
+    const id = PUBLISH_PUBS[pubKey].id;
+    const chain = folderChain || [];
+    const sourcePub = sourcePubFromChain(chain);
+    const rootSuffix = kind === 'bb' ? BB : ROOT;
+    if(pubKey === 'evo040' && sourcePub === '472' && chain.length){
+      const native = ['tcm:472-' + rootSuffix];
+      chain.forEach((t) => native.push(t));
+      return explorerContainerUrl('472', native);
+    }
+    if(pubKey === 'evo065' && sourcePub === '501'){
+      const id = PUBLISH_PUBS[pubKey].id;
+      return explorerContainerUrl(id, ['tcm:' + id + '-' + (kind === 'bb' ? BB : ROOT)]);
+    }
+    const c = ['tcm:' + id + '-' + rootSuffix];
+    chain.forEach((t) => c.push(remapTcm(t, id)));
+    return explorerContainerUrl(id, c);
   }
   function remapTcm(tcmId, pubId) {
     if(!tcmId || !pubId) return tcmId;
@@ -22,18 +44,8 @@
     if(p.length < 2) return tcmId;
     return p.length >= 3 ? 'tcm:' + pubId + '-' + p[1] + '-' + p[2] : 'tcm:' + pubId + '-' + p[1];
   }
-  function facilityBB(k, chain){
-    const id = PUBLISH_PUBS[k].id;
-    const c = ['tcm:' + id + '-' + BB];
-    (chain || []).forEach((t) => c.push(remapTcm(t, id)));
-    return explorerContainerUrl(id, c);
-  }
-  function facilityRoot(k, chain){
-    const id = PUBLISH_PUBS[k].id;
-    const c = ['tcm:' + id + '-' + ROOT];
-    (chain || []).forEach((t) => c.push(remapTcm(t, id)));
-    return explorerContainerUrl(id, c);
-  }
+  function facilityBB(k, chain){ return facilityExplorer(k, 'bb', chain); }
+  function facilityRoot(k, chain){ return facilityExplorer(k, 'root', chain); }
   function titleCase(slug){
     return String(slug || '').split('-').filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   }
@@ -92,14 +104,65 @@
     titleCaseSlug: titleCase, normalizeProdUrl, stageUrlFromProd: stageFromProd,
     latestUrlFromProd: latestFromProd, localeLatestUrl: localeLatest
   };
+  function urlPark(lookupKey){
+    if(!lookupKey || lookupKey.indexOf('/') < 0) return '';
+    return lookupKey.split('/')[0];
+  }
+  function entryPark(k, e){
+    if(e && e.parkSegment) return e.parkSegment;
+    if(k && k.indexOf('/') >= 0) return k.split('/')[0];
+    return '';
+  }
+  function mergeSlots(a, b, allowReplace){
+    if(!b) return a;
+    if(!a) return b;
+    const out = Object.assign({}, a);
+    const bbIn = b.bbParentChain || [];
+    const bbOut = out.bbParentChain || [];
+    if(!bbOut.length && bbIn.length) out.bbParentChain = bbIn;
+    else if(allowReplace && bbIn.length > bbOut.length) out.bbParentChain = bbIn;
+    const pgIn = b.pageParentChain || [];
+    const pgOut = out.pageParentChain || [];
+    if(!pgOut.length && pgIn.length){
+      out.pageParentChain = pgIn;
+      out.pageTcm = b.pageTcm || out.pageTcm;
+      out.itemNumber = b.itemNumber || out.itemNumber;
+      out.pageTitle = b.pageTitle || out.pageTitle;
+    } else if(allowReplace && pgIn.length > pgOut.length){
+      out.pageParentChain = pgIn;
+      out.pageTcm = b.pageTcm || out.pageTcm;
+      out.itemNumber = b.itemNumber || out.itemNumber;
+      out.pageTitle = b.pageTitle || out.pageTitle;
+    }
+    return out;
+  }
+  function mergeIndexEntry(a, b, allowReplace){
+    if(!b) return a;
+    if(!a) return Object.assign({}, b);
+    const out = Object.assign({}, a);
+    out.displayName = b.displayName || out.displayName;
+    const rep = allowReplace !== false;
+    ['evo040','evo065','lgcy065'].forEach((k) => { out[k] = mergeSlots(out[k], b[k], rep); });
+    return out;
+  }
   function lookupEntry(entries, lookupKey, slug){
     if(!entries) return null;
-    if(entries[lookupKey]) return entries[lookupKey];
-    if(entries[slug]) return entries[slug];
+    const park = urlPark(lookupKey);
+    let merged = entries[lookupKey] ? Object.assign({}, entries[lookupKey]) : null;
     for(const k of Object.keys(entries)){
-      if(k.endsWith('/' + slug) || k === slug) return entries[k];
+      const e = entries[k];
+      if(!e) continue;
+      const sameSlug = e.slug === slug || k.endsWith('/' + slug) || k === slug;
+      if(!sameSlug || k === lookupKey) continue;
+      const samePark = park && entryPark(k, e) === park;
+      if(!merged){
+        if(!park || samePark) merged = Object.assign({}, e);
+        continue;
+      }
+      merged = mergeIndexEntry(merged, e, samePark);
     }
-    return null;
+    if(!merged && entries[slug]) merged = Object.assign({}, entries[slug]);
+    return merged;
   }
   function slotForPub(entry, pubKey){
     if(!entry) return null;
@@ -176,21 +239,91 @@
     return d.innerHTML;
   }
 
-  function linkRow(label, href, sub){
+  function escapeAttr(s){
+    return String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;');
+  }
+
+  function copyChip(text){
+    if(text == null || text === '') return '';
+    return '<button type="button" class="validate-copy-chip" data-copy="' + escapeAttr(text) + '">Copy</button>';
+  }
+
+  function linkRow(label, href, sub, copyText){
     if(!href) return '';
+    const toCopy = copyText != null ? copyText : href;
     return '<div class="validate-link-row">' +
       '<span class="validate-link-label">' + escapeHtml(label) + '</span>' +
       '<a class="validate-link-href" href="' + escapeHtml(href) + '" target="_blank" rel="noopener">' +
-      escapeHtml(sub || href) + '</a></div>';
+      escapeHtml(sub || href) + '</a>' +
+      copyChip(toCopy) +
+      '</div>';
   }
 
-  function pubBlock(title, tree){
+  function bindValidateCopyChips(root){
+    if(!root || root.dataset.copyBound === '1') return;
+    root.dataset.copyBound = '1';
+    root.addEventListener('click', (e) => {
+      const btn = e.target.closest('.validate-copy-chip');
+      if(!btn || !root.contains(btn)) return;
+      e.preventDefault();
+      const text = btn.getAttribute('data-copy');
+      if(!text) return;
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = 'Copied';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = 'Copy';
+          btn.classList.remove('copied');
+        }, 1600);
+      }).catch(() => {});
+    });
+  }
+
+  /** Which D-Scribe rows Validate exposes (v1). */
+  const VALIDATE_DSCRIBE_LINKS = {
+    evo040: { bb: true, root: false },
+    evo065: { bb: true, root: true }
+  };
+
+  function pubBlock(title, tree, opts){
     if(!tree) return '';
+    opts = Object.assign({ bb: true, root: true }, opts || {});
     let html = '<div class="validate-pub-block"><div class="validate-pub-title">' + escapeHtml(title) + '</div>';
-    html += linkRow('Building Blocks', tree.buildingBlocksUrl, 'Open Building Blocks');
-    html += linkRow('Root/Page Level', tree.rootPageLevelUrl, 'Open Root / page level');
-    if(tree.note){
-      html += '<p class="validate-note">' + escapeHtml(tree.note) + '</p>';
+    if(opts.bb) html += linkRow('Building Blocks', tree.buildingBlocksUrl, 'Open Building Blocks');
+    if(opts.root) html += linkRow('Root/Page Level', tree.rootPageLevelUrl, 'Open Root / page level');
+    let note = tree.note;
+    if(note && !opts.root && /root\/page/i.test(note)) note = null;
+    if(note && !opts.bb && /building blocks/i.test(note)) note = null;
+    if(note){
+      html += '<p class="validate-note">' + escapeHtml(note) + '</p>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function mdxBlock(mdx){
+    if(!mdx) return '';
+    let html = '<div class="validate-mdx-block"><div class="validate-pub-title">MDX app deep link</div>';
+    if(mdx.ok && mdx.href){
+      html += linkRow('Detail URI', mdx.href, mdx.href);
+      html += '<div class="validate-link-row"><span class="validate-link-label">facilityId</span>' +
+        '<span class="validate-link-href validate-mdx-meta">' + escapeHtml(mdx.facilityId) + '</span>' +
+        copyChip(mdx.facilityId) + '</div>';
+      html += '<div class="validate-link-row"><span class="validate-link-label">entityType</span>' +
+        '<span class="validate-link-href validate-mdx-meta">' + escapeHtml(mdx.entityType) + '</span>' +
+        copyChip(mdx.entityType) + '</div>';
+      if(mdx.htmlSnippet){
+        html += '<div class="validate-link-row validate-mdx-snippet-row">' +
+          '<span class="validate-link-label">MDX link</span>' +
+          '<code class="validate-mdx-code">' + escapeHtml(mdx.htmlSnippet) + '</code>' +
+          copyChip(mdx.htmlSnippet) +
+          '</div>';
+      }
+    } else if(mdx.note){
+      html += '<p class="validate-note">' + escapeHtml(mdx.note) + '</p>';
     }
     html += '</div>';
     return html;
@@ -216,23 +349,37 @@
     lastResult = data;
     let html = '<section class="panel-block validate-results">';
     html += '<div class="section-title">RESOLVED</div>';
-    html += '<div class="validate-name">' + escapeHtml(data.displayName) + '</div>';
+    html += '<div class="validate-name-row">' +
+      '<div class="validate-name">' + escapeHtml(data.displayName) + '</div>' +
+      '<div class="validate-name-actions">' +
+      '<button type="button" class="validate-map-btn" id="validateMapBtn">Content map</button>' +
+      '<button type="button" class="validate-map-live-btn" id="validateMapLiveBtn" disabled title="Coming soon — save a D-Scribe session cookie for live page component links.">Live map</button>' +
+      '</div></div>';
     if(data.warnings && data.warnings.length){
       html += '<div class="validate-warn">' + data.warnings.map(escapeHtml).join('<br>') + '</div>';
     }
     html += linkRow('Production', data.prodUrl, data.prodUrl);
     html += linkRow('Stage', data.stageUrl, data.stageUrl);
     html += linkRow('Latest', data.latestUrl, data.latestUrl);
-    html += pubBlock(PUB_LABELS.evo040, data.evo040);
-    html += pubBlock(PUB_LABELS.evo065, data.evo065);
-    html += pubBlock(PUB_LABELS.lgcy065, data.lgcy065);
+    html += pubBlock(PUB_LABELS.evo040, data.evo040, VALIDATE_DSCRIBE_LINKS.evo040);
+    html += pubBlock(PUB_LABELS.evo065, data.evo065, VALIDATE_DSCRIBE_LINKS.evo065);
+    html += mdxBlock(data.mdx);
     html += localesBlock(data.locales);
     html += '<div class="validate-actions">' +
       '<button type="button" class="config-save-btn" id="validateCopyBtn">Copy all links</button>' +
       '</div></section>';
     out.innerHTML = html;
+    bindValidateCopyChips(out);
     const copyBtn = document.getElementById('validateCopyBtn');
     if(copyBtn) copyBtn.addEventListener('click', copyAllLinks);
+    const mapBtn = document.getElementById('validateMapBtn');
+    if(mapBtn) mapBtn.addEventListener('click', () => openFacilityGraph(false));
+    const mapLiveBtn = document.getElementById('validateMapLiveBtn');
+    if(mapLiveBtn){
+      mapLiveBtn.addEventListener('click', () => {
+        alert('Live content map is not available yet. Save a D-Scribe session cookie when it ships to resolve page component links from CMS.');
+      });
+    }
   }
 
   function collectLinks(data){
@@ -242,13 +389,20 @@
       'Stage: ' + data.stageUrl,
       'Latest: ' + data.latestUrl
     ];
-    ['evo040', 'evo065', 'lgcy065'].forEach((k) => {
+    Object.keys(VALIDATE_DSCRIBE_LINKS).forEach((k) => {
       const t = data[k];
-      if(!t) return;
+      const opts = VALIDATE_DSCRIBE_LINKS[k];
+      if(!t || !opts) return;
       lines.push('', PUB_LABELS[k] || k);
-      if(t.buildingBlocksUrl) lines.push('Building Blocks: ' + t.buildingBlocksUrl);
-      if(t.rootPageLevelUrl) lines.push('Root/Page Level: ' + t.rootPageLevelUrl);
+      if(opts.bb && t.buildingBlocksUrl) lines.push('Building Blocks: ' + t.buildingBlocksUrl);
+      if(opts.root && t.rootPageLevelUrl) lines.push('Root/Page Level: ' + t.rootPageLevelUrl);
     });
+    if(data.mdx && data.mdx.ok && data.mdx.href){
+      lines.push('', 'MDX detail');
+      lines.push('URI: ' + data.mdx.href);
+      lines.push('facilityId: ' + data.mdx.facilityId + '; entityType: ' + data.mdx.entityType);
+      if(data.mdx.htmlSnippet) lines.push('MDX link: ' + data.mdx.htmlSnippet);
+    }
     if(data.locales && data.locales.length){
       lines.push('', 'Locales (latest)');
       data.locales.forEach((row) => {
@@ -330,10 +484,30 @@
       (globalThis.DScribeLinks && globalThis.DiningResolveCore));
   }
 
+  function mdxFromSlugIndex(slug, entries){
+    const key = String(slug || '').toLowerCase();
+    const hit = entries && entries[key];
+    if(!hit || !hit.facilityId) return { ok: false, note: 'No facility ID in data/mdx-facility-by-slug.json for this slug.' };
+    const entityType = hit.entityType || 'restaurant';
+    const href = hit.href || ('mdx://finder/detail?facilityId=' + hit.facilityId + ';entityType=' + entityType);
+    const label = hit.name || slug;
+    const esc = label.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return {
+      ok: true,
+      facilityId: hit.facilityId,
+      entityType,
+      href,
+      htmlSnippet: '<a href="' + href + '">' + esc + '</a>',
+      name: hit.name || null,
+      note: null
+    };
+  }
+
   async function resolveInBrowser(raw){
     const coerced = coerceDiningInput(raw);
     await ensureResolverModules();
     let entries = {};
+    let mdxEntries = {};
     try {
       const idxRes = await fetch('/data/dining-slug-index.json');
       if(idxRes.ok){
@@ -341,12 +515,19 @@
         entries = idx.entries || idx;
       }
     } catch (_) {}
+    try {
+      const mdxRes = await fetch('/data/mdx-facility-by-slug.json');
+      if(mdxRes.ok){
+        const mdxIdx = await mdxRes.json();
+        mdxEntries = mdxIdx.entries || mdxIdx;
+      }
+    } catch (_) {}
 
     let data;
-    if(globalThis.ValidateResolverInline){
-      data = globalThis.ValidateResolverInline.resolveDiningUrl(coerced, entries);
-    } else if(globalThis.DScribeLinks && globalThis.DiningResolveCore){
+    if(globalThis.DScribeLinks && globalThis.DiningResolveCore){
       data = globalThis.DiningResolveCore.resolveDiningUrl(coerced, globalThis.DScribeLinks, entries);
+    } else if(globalThis.ValidateResolverInline){
+      data = globalThis.ValidateResolverInline.resolveDiningUrl(coerced, entries);
     } else {
       return {
         ok: false,
@@ -356,6 +537,7 @@
     if(data.ok){
       data.warnings = (data.warnings || []).slice();
       data.warnings.unshift('Resolved locally (index + link map). Restart npm start to use /api/dining/resolve.');
+      data.mdx = mdxFromSlugIndex(data.slug, mdxEntries);
     }
     return data;
   }
@@ -406,12 +588,133 @@
 
   let validateBound = false;
 
+  function closeGraphModal(){
+    const modal = document.getElementById('validateGraphModal');
+    if(modal){
+      modal.hidden = true;
+      modal.setAttribute('aria-hidden', 'true');
+    }
+  }
+
+  async function openFacilityGraph(){
+    if(!lastResult || !lastResult.ok || !lastResult.prodUrl){
+      alert('Resolve a URL first.');
+      return;
+    }
+    const modal = document.getElementById('validateGraphModal');
+    const cyEl = document.getElementById('validateGraphCy');
+    const titleEl = document.getElementById('validateGraphTitle');
+    const subEl = document.getElementById('validateGraphSub');
+    const legendEl = document.getElementById('validateGraphLegend');
+    if(!modal || !cyEl) return;
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    if(titleEl) titleEl.textContent = lastResult.displayName || 'Facility';
+    if(subEl) subEl.textContent = 'Loading from local D-Scribe crawl…';
+    if(legendEl) legendEl.textContent = '';
+    cyEl.innerHTML = '<div class="loading-wrap"><div class="spinner"></div></div>';
+    try {
+      const res = await fetch('/api/dining/graph?url=' + encodeURIComponent(lastResult.prodUrl));
+      const graph = await res.json();
+      if(!graph.ok){
+        cyEl.innerHTML = '<div class="error-box">' + escapeHtml(graph.error || 'Could not build graph.') + '</div>';
+        return;
+      }
+      cyEl.innerHTML = '';
+      if(subEl){
+        let sub = graph.nodeCount + ' D-Scribe links · offline crawl';
+        if(graph.truncated) sub += ' (truncated)';
+        subEl.textContent = sub;
+      }
+      if(legendEl && graph.legend && graph.legend.hint){
+        legendEl.textContent = graph.legend.hint;
+      }
+      const rows = (graph.nodes || []).filter((n) => n.explorerUrl);
+      let html = '<ul class="validate-graph-links">';
+      rows.forEach((n) => {
+        const page = n.nodeType === 'Page';
+        html += '<li class="validate-graph-link-row' + (page ? ' is-page' : '') + '">' +
+          '<a class="validate-graph-open" href="' + escapeAttr(n.explorerUrl) + '" target="_blank" rel="noopener" title="Open in D-Scribe">Open</a>' +
+          '<span class="validate-graph-link-name">' + escapeHtml(n.label) + '</span>' +
+          '</li>';
+      });
+      html += '</ul>';
+      cyEl.innerHTML = html;
+    } catch (err) {
+      cyEl.innerHTML = '<div class="error-box">' + escapeHtml(err && err.message ? err.message : 'Graph failed') + '</div>';
+    }
+  }
+
+  async function refreshDscribeSessionStatus(){
+    const statusEl = document.getElementById('validateDscribeStatus');
+    const noteEl = document.getElementById('validateDscribeNote');
+    if(!statusEl) return;
+    try {
+      const res = await fetch('/api/dscribe/session');
+      const data = await res.json();
+      if(data.valid){
+        statusEl.textContent = 'Active';
+        statusEl.className = 'validate-dscribe-status ok';
+        if(noteEl) noteEl.textContent = 'Live CMS lookup available when the slug index is incomplete.';
+      } else if(data.configured){
+        statusEl.textContent = 'Expired';
+        statusEl.className = 'validate-dscribe-status warn';
+        if(noteEl) noteEl.textContent = data.error || 'Paste a fresh cookie and Save session.';
+      } else {
+        statusEl.textContent = 'Not set';
+        statusEl.className = 'validate-dscribe-status';
+        if(noteEl) noteEl.textContent = 'Optional — only needed when facility folder chains are missing from the index/crawl.';
+      }
+    } catch (_) {
+      statusEl.textContent = 'Unknown';
+      statusEl.className = 'validate-dscribe-status warn';
+    }
+  }
+
+  async function saveDscribeSession(){
+    const ta = document.getElementById('validateDscribeCookie');
+    const noteEl = document.getElementById('validateDscribeNote');
+    const cookie = ta ? ta.value.trim() : '';
+    try {
+      const res = await fetch('/api/dscribe/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cookie })
+      });
+      const data = await res.json();
+      if(!res.ok || !data.ok){
+        if(noteEl) noteEl.textContent = data.error || 'Could not save session.';
+        await refreshDscribeSessionStatus();
+        return;
+      }
+      if(ta) ta.value = '';
+      if(noteEl) noteEl.textContent = 'Session saved for this server run (memory only).';
+      await refreshDscribeSessionStatus();
+    } catch (err) {
+      if(noteEl) noteEl.textContent = err && err.message ? err.message : 'Save failed.';
+    }
+  }
+
   function initValidateView(){
     if(validateBound) return;
     validateBound = true;
     const input = document.getElementById('validateUrlInput');
     const btn = document.getElementById('validateResolveBtn');
     if(!input || !btn) return;
+
+    refreshDscribeSessionStatus();
+    const saveBtn = document.getElementById('validateDscribeSaveBtn');
+    const clearBtn = document.getElementById('validateDscribeClearBtn');
+    if(saveBtn) saveBtn.addEventListener('click', () => { saveDscribeSession(); });
+    if(clearBtn) clearBtn.addEventListener('click', () => {
+      const ta = document.getElementById('validateDscribeCookie');
+      if(ta) ta.value = '';
+      fetch('/api/dscribe/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cookie: '' })
+      }).then(() => refreshDscribeSessionStatus());
+    });
 
     function run(){
       resolveUrl(input.value);
@@ -424,6 +727,21 @@
       setTimeout(() => {
         if(shouldAutoResolve(input.value)) run();
       }, 0);
+    });
+    const resultsRoot = document.getElementById('validateResults');
+    if(resultsRoot) bindValidateCopyChips(resultsRoot);
+    const graphClose = document.getElementById('validateGraphClose');
+    const graphBackdrop = document.getElementById('validateGraphBackdrop');
+    if(graphClose) graphClose.addEventListener('click', closeGraphModal);
+    if(graphBackdrop) graphBackdrop.addEventListener('click', closeGraphModal);
+    const graphLive = document.getElementById('validateGraphLiveBtn');
+    if(graphLive){
+      graphLive.addEventListener('click', () => {
+        alert('Live content map is not available yet. Save a D-Scribe session cookie when it ships to resolve page component links from CMS.');
+      });
+    }
+    document.addEventListener('keydown', (e) => {
+      if(e.key === 'Escape') closeGraphModal();
     });
   }
 

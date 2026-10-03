@@ -4,42 +4,68 @@ const fs = require('fs');
 const path = require('path');
 const links = require('./dscribe-links.js');
 const core = require('./dining-resolve-core.js');
+const { mergeIndexEntries, enrichResult } = require('./dscribe-enrich.js');
+const { mdxPayloadForResolve } = require('../mdx/mdx-facility.js');
 
 const ROOT = path.join(__dirname, '..', '..');
 let indexCache = null;
-let indexMtime = 0;
+let indexSignature = '';
 
 function indexPaths() {
-  const paths = [path.join(ROOT, 'data', 'dining-slug-index.json')];
+  const paths = [];
   const data = (process.env.DSCRIBE_DATA || '').trim();
   if (data) {
     paths.push(path.join(data, 'dining-slug-index.json'));
   }
+  paths.push(path.join(ROOT, 'data', 'dining-slug-index.json'));
   return paths;
 }
 
+function loadIndexFile(p) {
+  const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
+  return raw.entries || raw;
+}
+
 function loadIndex() {
-  for (const p of indexPaths()) {
+  const paths = indexPaths();
+  let signature = paths.map((p) => {
     try {
-      const st = fs.statSync(p);
-      if (indexCache && p === indexCache._path && st.mtimeMs === indexMtime) {
-        return indexCache;
-      }
-      const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
-      indexCache = { _path: p, entries: raw.entries || raw };
-      indexMtime = st.mtimeMs;
-      return indexCache;
+      return p + ':' + fs.statSync(p).mtimeMs;
     } catch (_) {
-      continue;
+      return p + ':missing';
     }
+  }).join('|');
+  if (indexCache && signature === indexSignature) {
+    return indexCache;
   }
-  indexCache = { _path: null, entries: {} };
+  let merged = {};
+  paths.forEach((p) => {
+    try {
+      merged = mergeIndexEntries(merged, loadIndexFile(p));
+    } catch (_) {
+      /* skip */
+    }
+  });
+  indexCache = { _path: paths[0], entries: merged };
+  indexSignature = signature;
   return indexCache;
 }
 
-function resolveDiningUrl(rawUrl) {
+async function resolveDiningUrl(rawUrl) {
   const { entries } = loadIndex();
-  return core.resolveDiningUrl(rawUrl, links, entries);
+  let result = core.resolveDiningUrl(rawUrl, links, entries);
+  if (!result.ok) return result;
+  result = await enrichResult(result, links);
+  if (result._entry) delete result._entry;
+  result.mdx = mdxPayloadForResolve(result.slug);
+  return result;
 }
 
-module.exports = { resolveDiningUrl, loadIndex };
+function resolveDiningUrlSync(rawUrl) {
+  const { entries } = loadIndex();
+  const result = core.resolveDiningUrl(rawUrl, links, entries);
+  if (result.ok) result.mdx = mdxPayloadForResolve(result.slug);
+  return result;
+}
+
+module.exports = { resolveDiningUrl, resolveDiningUrlSync, loadIndex };

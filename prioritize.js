@@ -376,8 +376,8 @@ const PR_REVIEW_TURNAROUND_DAYS = 1;
  * after MS handoff (prefer WDW→CONTENT key-change; else CONTENT created).
  */
 const MS_CHECKIN_CALENDAR_DAYS = 3;
-/** Hard MS stall: due within this many calendar days (or overdue), still with MS. */
-const MS_STALL_DUE_WITHIN_DAYS = 5;
+/** Hard MS publish watch: parent due within this many business days (or overdue), still with MS. */
+const MS_STALL_DUE_WITHIN_DAYS = 3;
 
 /** Calendar (not business) day delta from start → end at midnight. */
 function calendarDaysBetween(start, end){
@@ -503,20 +503,27 @@ function isMsCheckinSoft(ticket, msSoloKeys){
   return ageCal >= MS_CHECKIN_CALENDAR_DAYS;
 }
 
+function msStallBusinessDaysUntilDue(ticket){
+  if(!ticket || !ticket.dueDate) return null;
+  return businessDaysBetween(todayMid(), atMidnight(ticket.dueDate));
+}
+
 /**
- * Hard MS stall: due exists and ≤5 calendar days away (or overdue), still with MS.
+ * Hard MS publish watch: parent due ≤3 business days away (or overdue), still with MS.
  * Inject into Needs Attention — no Solo pipeline scoring.
  */
 function isMsStallHard(ticket, msSoloKeys){
   if(!isStillWithManagedServices(ticket, msSoloKeys)) return false;
   if(!ticket.dueDate) return false;
-  const daysUntilDue = calendarDaysBetween(todayMid(), atMidnight(ticket.dueDate));
+  const daysUntilDue = msStallBusinessDaysUntilDue(ticket);
+  if(typeof daysUntilDue !== 'number' || !Number.isFinite(daysUntilDue)) return false;
   return daysUntilDue <= MS_STALL_DUE_WITHIN_DAYS;
 }
 
 function msStallReason(ticket){
   if(!ticket || !ticket.dueDate) return 'MS stall';
-  const days = calendarDaysBetween(todayMid(), atMidnight(ticket.dueDate));
+  const days = msStallBusinessDaysUntilDue(ticket);
+  if(typeof days !== 'number') return 'MS stall';
   if(days < 0) return 'Past due — still with MS';
   if(days <= MS_STALL_DUE_WITHIN_DAYS) return 'Due soon — still with MS';
   return 'MS stall';
@@ -524,10 +531,11 @@ function msStallReason(ticket){
 
 function msStallCalendarDueLabel(ticket){
   if(!ticket || !ticket.dueDate) return '—';
-  const days = calendarDaysBetween(todayMid(), atMidnight(ticket.dueDate));
+  const days = msStallBusinessDaysUntilDue(ticket);
+  if(typeof days !== 'number') return '—';
   if(days === 0) return 'Today';
-  if(days < 0) return Math.abs(days) + 'd overdue';
-  return 'In ' + days + 'd';
+  if(days < 0) return Math.abs(days) + 'bd overdue';
+  return 'In ' + days + 'bd';
 }
 
 function collectMsCheckinTickets(data){
@@ -535,16 +543,18 @@ function collectMsCheckinTickets(data){
   return ((data && data.contentTickets) || []).filter(t => isMsCheckinSoft(t, msSoloKeys));
 }
 
-/** Hard stalls from CONTENT portfolio minus MS Solo — sorted by due date ascending. */
+/** Hard stalls from CONTENT portfolio minus MS Solo — sorted by business days until due. */
 function collectMsStallTickets(data){
   const msSoloKeys = msSoloKeySet(data);
   return ((data && data.contentTickets) || [])
     .filter(t => isMsStallHard(t, msSoloKeys))
     .slice()
     .sort((a, b) => {
-      const da = a.dueDate ? atMidnight(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
-      const db = b.dueDate ? atMidnight(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
-      if(da !== db) return da - db;
+      const da = msStallBusinessDaysUntilDue(a);
+      const db = msStallBusinessDaysUntilDue(b);
+      const na = typeof da === 'number' ? da : Number.POSITIVE_INFINITY;
+      const nb = typeof db === 'number' ? db : Number.POSITIVE_INFINITY;
+      if(na !== nb) return na - nb;
       return String(a.key || '').localeCompare(String(b.key || ''));
     });
 }

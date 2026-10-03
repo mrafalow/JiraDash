@@ -40,22 +40,15 @@ const BUILDING_BLOCKS_SUFFIX = '1-2';
 function explorerContainerUrl(pubId, folderTcmSegments) {
   const parts = ['cme:publications_tcm:0-' + pubId + '-1'];
   (folderTcmSegments || []).forEach((seg) => parts.push(seg));
-  return (
-    DSCRIBE_BASE +
-    '/ui/#/explorer?container=' +
-    parts.join('_') +
-    '&panel=information'
-  );
+  const container = parts.join('_');
+  return DSCRIBE_BASE + '/ui/explorer?container=' + container + '&panel=information';
 }
 
 function explorerWithItem(pubId, folderChainPublish, itemTcmPublish) {
   const parts = ['cme:publications_tcm:0-' + pubId + '-1'];
   (folderChainPublish || []).forEach((seg) => parts.push(seg));
-  let url =
-    DSCRIBE_BASE +
-    '/ui/#/explorer?container=' +
-    parts.join('_') +
-    '&panel=information';
+  const container = parts.join('_');
+  let url = DSCRIBE_BASE + '/ui/explorer?container=' + container + '&panel=information';
   if (itemTcmPublish) {
     url += '&item=' + encodeURIComponent(itemTcmPublish);
   }
@@ -69,6 +62,41 @@ function remapTcmToPublishPub(tcmId, publishPubId) {
   if (parts.length < 2) return tcmId;
   if (parts.length >= 3) return 'tcm:' + publishPubId + '-' + parts[1] + '-' + parts[2];
   return 'tcm:' + publishPubId + '-' + parts[1];
+}
+
+/** Publication id from the first segment of a tcm id (e.g. tcm:472-46975-2 → 472). */
+function sourcePubFromChain(chain) {
+  if (!chain || !chain.length) return '';
+  const body = String(chain[0]).split(':')[1] || '';
+  return body.split('-')[0] || '';
+}
+
+/**
+ * EVO045 BB folders (pub 472) are authored in 472; remapping item numbers onto publish 281 breaks explorer.
+ * EVO060 structure folders (283) remap onto parent publish 934 / 914 as usual.
+ */
+function facilityExplorer(pubKey, kind, folderChainStructure) {
+  const pub = PUBLISH_PUBS[pubKey];
+  if (!pub) return null;
+  const chain = folderChainStructure || [];
+  const sourcePub = sourcePubFromChain(chain);
+  const rootSuffix = kind === 'bb' ? BUILDING_BLOCKS_SUFFIX : ROOT_FOLDER_SUFFIX;
+
+  if (pubKey === 'evo040' && sourcePub === '472' && chain.length) {
+    const native = ['tcm:472-' + rootSuffix];
+    chain.forEach((id) => native.push(id));
+    return explorerContainerUrl('472', native);
+  }
+  // EVO045 migration / duplicate BB trees (501) do not exist under parent publish 934.
+  if (pubKey === 'evo065' && sourcePub === '501') {
+    return publicationBuildingBlocksExplorer(pubKey);
+  }
+
+  const publishChain = ['tcm:' + pub.id + '-' + rootSuffix];
+  chain.forEach((id) => {
+    publishChain.push(remapTcmToPublishPub(id, pub.id));
+  });
+  return explorerContainerUrl(pub.id, publishChain);
 }
 
 function publicationRootExplorer(pubKey) {
@@ -89,13 +117,7 @@ function publicationBuildingBlocksExplorer(pubKey) {
  * @param {string[]} bbParentChainStructure - folder tcm ids from crawl source pub
  */
 function facilityBuildingBlocksExplorer(pubKey, bbParentChainStructure) {
-  const pub = PUBLISH_PUBS[pubKey];
-  if (!pub) return null;
-  const chain = ['tcm:' + pub.id + '-' + BUILDING_BLOCKS_SUFFIX];
-  (bbParentChainStructure || []).forEach((id) => {
-    chain.push(remapTcmToPublishPub(id, pub.id));
-  });
-  return explorerContainerUrl(pub.id, chain);
+  return facilityExplorer(pubKey, 'bb', bbParentChainStructure);
 }
 
 /**
@@ -105,13 +127,7 @@ function facilityBuildingBlocksExplorer(pubKey, bbParentChainStructure) {
  * @param {string[]} pageParentChainStructure - folder tcm ids from crawl source pub
  */
 function facilityRootPageExplorer(pubKey, pageParentChainStructure) {
-  const pub = PUBLISH_PUBS[pubKey];
-  if (!pub) return null;
-  const chain = ['tcm:' + pub.id + '-' + ROOT_FOLDER_SUFFIX];
-  (pageParentChainStructure || []).forEach((id) => {
-    chain.push(remapTcmToPublishPub(id, pub.id));
-  });
-  return explorerContainerUrl(pub.id, chain);
+  return facilityExplorer(pubKey, 'root', pageParentChainStructure);
 }
 
 function editorPageUrl(publishPubId, itemNumber) {
@@ -238,6 +254,8 @@ const api = {
   explorerContainerUrl,
   explorerWithItem,
   remapTcmToPublishPub,
+  sourcePubFromChain,
+  facilityExplorer,
   publicationRootExplorer,
   publicationBuildingBlocksExplorer,
   facilityBuildingBlocksExplorer,

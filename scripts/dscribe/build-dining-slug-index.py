@@ -24,6 +24,21 @@ PUB_SLOTS = {
     "627": "lgcy065",
 }
 
+# EVO045 content BB folders (472, 501, …) — item numbers remap to 281 / 934 publish explorers.
+BB_PUB_TREES: dict[str, list[str]] = {
+    "472": ["evo040", "evo065"],
+    "501": ["evo040", "evo065"],
+    "270": ["evo040", "evo065"],
+    "525": ["evo040", "evo065"],
+    "421": ["evo040", "evo065"],
+}
+
+
+def trees_for_bb_pub(pub: str) -> list[str]:
+    if pub in PUB_SLOTS:
+        return [PUB_SLOTS[pub]]
+    return BB_PUB_TREES.get(pub, [])
+
 SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$", re.I)
 
 
@@ -61,14 +76,34 @@ def slug_from_page(rec: dict) -> str | None:
     return None
 
 
-def park_from_path(path: str) -> str:
+def park_from_path(path: str, webdav: str = "", facility_slug: str | None = None) -> str:
+    """Prod URL park segment (e.g. all-star-sports-resort), not CMS folder names like resort-dining."""
+    slug = (facility_slug or "").strip().lower()
+    wd = (webdav or "").lower()
+    if slug and "/resort-dining/" in wd:
+        m = re.search(r"/resort-dining/([^/]+)/" + re.escape(slug), wd)
+        if m:
+            return m.group(1).lower()
+
     parts = [p for p in (path or "").split("\\") if p]
-    slug = parts[-1].lower() if parts else ""
+    pl_parts = [p.lower() for p in parts]
+    if "resort-dining" in pl_parts:
+        ri = pl_parts.index("resort-dining")
+        if ri + 1 < len(parts):
+            resort = parts[ri + 1].lower()
+            if slug and ri + 2 < len(parts) and parts[ri + 2].lower() == slug:
+                return resort
+            if slug and resort != slug:
+                return resort
+
+    last = parts[-1].lower() if parts else ""
     for i, p in enumerate(parts):
         pl = p.lower()
         if pl in ("dining", "things-to-do") and i + 1 < len(parts):
             candidate = parts[i + 1].lower()
-            if candidate != slug:
+            if candidate in ("resort-dining", "wdw", "root", "building blocks"):
+                continue
+            if candidate != last:
                 return candidate
     return ""
 
@@ -176,7 +211,7 @@ def index_page(by_id: dict, index: dict, rec: dict, tree: str) -> None:
     slug = slug_from_page(rec)
     if not slug:
         return
-    park = park_from_path(rec.get("path") or "")
+    park = park_from_path(rec.get("path") or "", rec.get("webdav") or "", slug)
     key = f"{park}/{slug}" if park else slug
     num = item_number(rid, "64")
     if not num:
@@ -193,9 +228,16 @@ def index_page(by_id: dict, index: dict, rec: dict, tree: str) -> None:
         tree_slot["pageTitle"] = rec.get("title")
 
 
+def is_migration_bb_path(rec: dict) -> bool:
+    path = (rec.get("path") or "").lower()
+    return "contentmigration" in path or "things to do - wdw" in path
+
+
 def index_bb_folder(by_id: dict, index: dict, rec: dict, tree: str) -> None:
     rid = rec.get("id", "")
     if not rid.endswith("-2"):
+        return
+    if is_migration_bb_path(rec):
         return
     # Skip publication Building Blocks root itself
     body = rid.split(":")[1] if ":" in rid else ""
@@ -215,7 +257,7 @@ def index_bb_folder(by_id: dict, index: dict, rec: dict, tree: str) -> None:
                 slug = parts[-1].lower()
             else:
                 return
-    park = park_from_path(rec.get("path") or "")
+    park = park_from_path(rec.get("path") or "", rec.get("webdav") or "", slug)
     key = f"{park}/{slug}" if park else slug
     # Include this folder as the leaf of the BB chain
     ancestors = walk_parent_chain(by_id, rec.get("parent"))
@@ -227,25 +269,55 @@ def index_bb_folder(by_id: dict, index: dict, rec: dict, tree: str) -> None:
         tree_slot["bbParentChain"] = chain
 
 
+def index_structure_facility(by_id: dict, index: dict, rec: dict, tree: str) -> None:
+    """060/065 structure group (-4) named like the URL slug → page/root explorer chain."""
+    rid = rec.get("id", "")
+    if not rid.endswith("-4"):
+        return
+    if rec.get("type") not in ("StructureGroup", "Folder", None):
+        return
+    if not path_mentions_dining(rec):
+        return
+    slug = slug_from_title(rec.get("title") or "")
+    if not slug:
+        return
+    park = park_from_path(rec.get("path") or "", rec.get("webdav") or "", slug)
+    key = f"{park}/{slug}" if park else slug
+    ancestors = walk_parent_chain(by_id, rec.get("parent"))
+    chain = ancestors + [rid]
+    title = display_name_from_slug(slug, rec.get("title"))
+    entry = ensure_entry(index, key, slug, park, title)
+    tree_slot = ensure_tree_slot(entry, tree)
+    if not tree_slot.get("pageParentChain") or len(chain) > len(
+        tree_slot.get("pageParentChain") or []
+    ):
+        tree_slot["pageParentChain"] = chain
+        tree_slot["pageTitle"] = rec.get("title") or slug
+
+
 def build_index(by_id: dict) -> dict:
     index: dict = {}
 
     for rec in by_id.values():
         rid = rec.get("id", "")
         pub = pub_from_id(rid)
-        tree = PUB_SLOTS.get(pub)
-        if not tree:
-            continue
         if rid.endswith("-64"):
-            index_page(by_id, index, rec, tree)
+            tree = PUB_SLOTS.get(pub)
+            if tree:
+                index_page(by_id, index, rec, tree)
         elif rid.endswith("-2"):
-            index_bb_folder(by_id, index, rec, tree)
+            for tree in trees_for_bb_pub(pub):
+                index_bb_folder(by_id, index, rec, tree)
+        elif rid.endswith("-4"):
+            tree = PUB_SLOTS.get(pub)
+            if tree:
+                index_structure_facility(by_id, index, rec, tree)
 
     # For pages that have pageParentChain but empty bb — leave bb empty (UI falls back)
     return {"version": 2, "entries": index}
 
 
-def main() -> None:
+def load_by_id() -> dict:
     path = items_path()
     if not path.is_file():
         raise SystemExit(
@@ -267,6 +339,71 @@ def main() -> None:
                     by_id[rid] = rec
             except (json.JSONDecodeError, TypeError, AttributeError):
                 continue
+    return by_id
+
+
+def main() -> None:
+    import sys
+
+    if len(sys.argv) >= 3 and sys.argv[1] == "--lookup":
+        lookup_key = sys.argv[2].strip()
+        by_id = load_by_id()
+        data = build_index(by_id)
+        def merge_slots(a: dict | None, b: dict | None, allow_longer: bool = True) -> dict | None:
+            if not b:
+                return a
+            if not a:
+                return b
+            out = dict(a)
+            bb_b = b.get("bbParentChain") or []
+            bb_a = out.get("bbParentChain") or []
+            if not bb_a and bb_b:
+                out["bbParentChain"] = bb_b
+            elif allow_longer and len(bb_b) > len(bb_a):
+                out["bbParentChain"] = bb_b
+            pg_b = b.get("pageParentChain") or []
+            pg_a = out.get("pageParentChain") or []
+            if not pg_a and pg_b:
+                out["pageParentChain"] = pg_b
+                out["pageTitle"] = b.get("pageTitle") or out.get("pageTitle")
+            elif allow_longer and len(pg_b) > len(pg_a):
+                out["pageParentChain"] = pg_b
+                out["pageTitle"] = b.get("pageTitle") or out.get("pageTitle")
+            return out
+
+        def merge_entries(a: dict | None, b: dict | None, allow_longer: bool = True) -> dict | None:
+            if not b:
+                return a
+            if not a:
+                return dict(b)
+            out = dict(a)
+            out["displayName"] = b.get("displayName") or out.get("displayName")
+            for tree in ("evo040", "evo065", "lgcy065"):
+                out[tree] = merge_slots(out.get(tree), b.get(tree), allow_longer)
+            return out
+
+        entries = data["entries"]
+        url_park = lookup_key.split("/")[0] if "/" in lookup_key else ""
+        slug_tail = lookup_key.split("/")[-1] if "/" in lookup_key else lookup_key
+        entry = entries.get(lookup_key)
+        if entry:
+            entry = dict(entry)
+        for k, v in entries.items():
+            if k == lookup_key:
+                continue
+            if v.get("slug") != slug_tail and not k.endswith("/" + slug_tail) and k != slug_tail:
+                continue
+            key_park = v.get("parkSegment") or (k.split("/")[0] if "/" in k else "")
+            same_park = bool(url_park and key_park == url_park)
+            if not entry:
+                if not url_park or same_park:
+                    entry = merge_entries(entry, v)
+                continue
+            entry = merge_entries(entry, v, allow_longer=same_park)
+        print(json.dumps(entry or {}))
+        return
+
+    by_id = load_by_id()
     data = build_index(by_id)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(data, indent=2), encoding="utf-8")

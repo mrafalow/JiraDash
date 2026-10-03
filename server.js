@@ -397,20 +397,83 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if(pathname === '/api/dscribe/session'){
+    const session = require('./scripts/dscribe/dscribe-session.js');
+    if(req.method === 'GET'){
+      session.validateCookie().then((v) => {
+        sendJson(res, 200, {
+          configured: !!session.getCookie(),
+          valid: !!v.ok,
+          status: v.status || 0,
+          error: v.error || null
+        });
+      });
+      return;
+    }
+    if(req.method === 'POST'){
+      readRequestBody(req).then((buf) => {
+        let body = {};
+        if(buf && buf.length){
+          try { body = JSON.parse(buf.toString('utf8')); } catch (_) { body = {}; }
+        }
+        const cookie = (body && body.cookie) ? String(body.cookie).trim() : '';
+        if(!cookie){
+          session.clearCookie();
+          sendJson(res, 200, { ok: true, configured: false, valid: false });
+          return;
+        }
+        session.setCookie(cookie);
+        return session.validateCookie(cookie).then((v) => {
+          if(!v.ok){
+            session.clearCookie();
+            sendJson(res, 400, { ok: false, error: v.error || 'Invalid DScribe cookie.' });
+            return;
+          }
+          sendJson(res, 200, { ok: true, configured: true, valid: true });
+        });
+      }).catch((err) => {
+        sendJson(res, 400, { ok: false, error: err && err.message ? err.message : String(err) });
+      });
+      return;
+    }
+    sendJson(res, 405, { ok: false, error: 'Method not allowed' });
+    return;
+  }
+
   if(pathname === '/api/dining/resolve' && req.method === 'GET'){
+    const { resolveDiningUrl } = require('./scripts/dscribe/dining-resolve.js');
+    const raw = (u.searchParams.get('url') || '').trim();
+    if(!raw){
+      sendJson(res, 400, { ok: false, error: 'Missing url query parameter.' });
+      return;
+    }
+    Promise.resolve(resolveDiningUrl(raw))
+      .then((result) => {
+        sendJson(res, result.ok ? 200 : 400, result);
+      })
+      .catch((err) => {
+        sendJson(res, 500, {
+          ok: false,
+          error: 'Validate resolver failed: ' + (err && err.message ? err.message : String(err))
+        });
+      });
+    return;
+  }
+
+  if(pathname === '/api/dining/graph' && req.method === 'GET'){
+    const { buildGraphForUrl } = require('./scripts/dscribe/dining-graph.js');
+    const raw = (u.searchParams.get('url') || '').trim();
+    if(!raw){
+      sendJson(res, 400, { ok: false, error: 'Missing url query parameter.' });
+      return;
+    }
     try {
-      const { resolveDiningUrl } = require('./scripts/dscribe/dining-resolve.js');
-      const raw = (u.searchParams.get('url') || '').trim();
-      if(!raw){
-        sendJson(res, 400, { ok: false, error: 'Missing url query parameter.' });
-        return;
-      }
-      const result = resolveDiningUrl(raw);
+      const result = buildGraphForUrl(raw);
       sendJson(res, result.ok ? 200 : 400, result);
     } catch (err) {
       sendJson(res, 500, {
         ok: false,
-        error: 'Validate resolver failed: ' + (err && err.message ? err.message : String(err))
+        error: 'Graph builder failed: ' + (err && err.message ? err.message : String(err))
       });
     }
     return;

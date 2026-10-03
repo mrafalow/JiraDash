@@ -1,13 +1,73 @@
 'use strict';
 
+function parkFromLookupKey(lookupKey) {
+  if (!lookupKey || !lookupKey.includes('/')) return '';
+  return lookupKey.split('/')[0];
+}
+
+function entryParkSegment(indexKey, entry) {
+  if (entry && entry.parkSegment) return entry.parkSegment;
+  if (indexKey && indexKey.includes('/')) return indexKey.split('/')[0];
+  return '';
+}
+
+function mergeSlots(existing, incoming, allowLongerReplace) {
+  if (!incoming) return existing;
+  if (!existing) return incoming;
+  const out = Object.assign({}, existing);
+  const bbIn = incoming.bbParentChain || [];
+  const bbOut = out.bbParentChain || [];
+  if (!bbOut.length && bbIn.length) out.bbParentChain = bbIn;
+  else if (allowLongerReplace && bbIn.length > bbOut.length) out.bbParentChain = bbIn;
+  const pgIn = incoming.pageParentChain || [];
+  const pgOut = out.pageParentChain || [];
+  if (!pgOut.length && pgIn.length) {
+    out.pageParentChain = pgIn;
+    out.pageTcm = incoming.pageTcm || out.pageTcm;
+    out.itemNumber = incoming.itemNumber || out.itemNumber;
+    out.pageTitle = incoming.pageTitle || out.pageTitle;
+  } else if (allowLongerReplace && pgIn.length > pgOut.length) {
+    out.pageParentChain = pgIn;
+    out.pageTcm = incoming.pageTcm || out.pageTcm;
+    out.itemNumber = incoming.itemNumber || out.itemNumber;
+    out.pageTitle = incoming.pageTitle || out.pageTitle;
+  }
+  return out;
+}
+
+function mergeIndexEntry(existing, incoming, allowLongerReplace) {
+  if (!incoming) return existing;
+  if (!existing) return Object.assign({}, incoming);
+  const out = Object.assign({}, existing);
+  out.displayName = incoming.displayName || out.displayName;
+  const replace = allowLongerReplace !== false;
+  ['evo040', 'evo065', 'lgcy065'].forEach((k) => {
+    out[k] = mergeSlots(out[k], incoming[k], replace);
+  });
+  return out;
+}
+
 function lookupEntry(entries, lookupKey, slug) {
   if (!entries || typeof entries !== 'object') return null;
-  if (entries[lookupKey]) return entries[lookupKey];
-  if (entries[slug]) return entries[slug];
+  const urlPark = parkFromLookupKey(lookupKey);
+  let merged = entries[lookupKey] ? Object.assign({}, entries[lookupKey]) : null;
+
   for (const k of Object.keys(entries)) {
-    if (k.endsWith('/' + slug) || k === slug) return entries[k];
+    const e = entries[k];
+    if (!e) continue;
+    const sameSlug = e.slug === slug || k.endsWith('/' + slug) || k === slug;
+    if (!sameSlug || k === lookupKey) continue;
+
+    const samePark = urlPark && entryParkSegment(k, e) === urlPark;
+    if (!merged) {
+      if (!urlPark || samePark) merged = Object.assign({}, e);
+      continue;
+    }
+    merged = mergeIndexEntry(merged, e, samePark);
   }
-  return null;
+
+  if (!merged && entries[slug]) merged = Object.assign({}, entries[slug]);
+  return merged;
 }
 
 function slotForPub(entry, pubKey) {
@@ -121,12 +181,14 @@ function resolveDiningUrl(rawUrl, links, entries) {
     evo040: categoryPayload(links, 'evo040', slotForPub(entry, 'evo040')),
     evo065: categoryPayload(links, 'evo065', slotForPub(entry, 'evo065')),
     lgcy065: categoryPayload(links, 'lgcy065', slotForPub(entry, 'lgcy065')),
-    warnings
+    warnings,
+    _entry: entry || null
   };
 }
 
 const api = {
   lookupEntry,
+  mergeIndexEntry,
   slotForPub,
   categoryPayload,
   resolveDiningUrl

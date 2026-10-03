@@ -1,6 +1,8 @@
 /* ============================================================
    app.js — wire UI, rendering, and data loading
    ============================================================ */
+const MS_PUBLISH_WATCH_KEY = 'studio-titan-ms-publish-watch';
+
 let STATE = {
   data: null,
   expandedKeys: new Set(),
@@ -11,8 +13,56 @@ let STATE = {
   calMonth: todayMid().getMonth(),
   horizonFilterDay: null,
   atRiskItems: [],
-  waitingItems: []
+  waitingItems: [],
+  showMsPublishWatch: true
 };
+
+function loadMsPublishWatchPref(){
+  try{
+    const raw = localStorage.getItem(MS_PUBLISH_WATCH_KEY);
+    if(raw === '0' || raw === 'false') return false;
+    return true;
+  } catch(_){
+    return true;
+  }
+}
+
+function saveMsPublishWatchPref(on){
+  STATE.showMsPublishWatch = !!on;
+  try{
+    localStorage.setItem(MS_PUBLISH_WATCH_KEY, on ? '1' : '0');
+  } catch(_){ /* in-memory only */ }
+}
+
+function sortAttentionScoredItems(items){
+  return items.slice().sort((a, b) => {
+    const sa = (a.scoring && a.scoring.score) || 0;
+    const sb = (b.scoring && b.scoring.score) || 0;
+    if(sb !== sa) return sb - sa;
+    const da = (a.scoring && typeof a.scoring.daysUntilDue === 'number') ? a.scoring.daysUntilDue : 999;
+    const db = (b.scoring && typeof b.scoring.daysUntilDue === 'number') ? b.scoring.daysUntilDue : 999;
+    if(da !== db) return da - db;
+    return String(a.t.key || '').localeCompare(String(b.t.key || ''));
+  });
+}
+
+function msPublishWatchToggleHtml(eligibleCount){
+  const disabled = !eligibleCount;
+  const checked = STATE.showMsPublishWatch && !disabled;
+  const title = disabled
+    ? 'No MS tickets within 3 business days of publish'
+    : 'Show CONTENT tickets still with MS (publish within 3 business days)';
+  return '<label class="lane-ms-toggle'+(disabled ? ' is-disabled' : '')+(checked ? ' is-on' : '')+'" title="'+escapeAttr(title)+'">' +
+    '<span class="lane-ms-toggle-label">MS publish watch</span>' +
+    '<span class="lane-ms-switch-wrap">' +
+      '<input type="checkbox" class="lane-ms-toggle-input" data-ms-publish-toggle '+
+      (disabled ? 'disabled ' : '')+
+      (checked ? 'checked ' : '')+
+      'aria-label="MS publish watch"/>' +
+      '<span class="lane-ms-switch" aria-hidden="true"><span class="lane-ms-switch-thumb"></span></span>' +
+    '</span>' +
+    '</label>';
+}
 
 function iconSvg(name){
   const icons = {
@@ -20,7 +70,8 @@ function iconSvg(name){
     warning: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3l9 16H3L12 3zM12 10v4M12 17.5h.01"/></svg>',
     users: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19c0-3.3 2.9-5.5 6.5-5.5s6.5 2.2 6.5 5.5M17 8.2a3 3 0 010 5.8M21 19c0-2.5-1.8-4.3-4-5"/></svg>',
     translate: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg>',
-    queue: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="19" cy="18" r="2.2"/></svg>'
+    queue: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="19" cy="18" r="2.2"/></svg>',
+    eye: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>'
   };
   return icons[name] || '';
 }
@@ -45,20 +96,22 @@ function msBadgeHtml(ticket){
   return '<span class="ms-badge" title="Managed Services — truncated pipeline">MS</span>';
 }
 
-/** Hard MS stall card — no pipeline score; click opens Jira. */
+/** Hard MS stall card — no pipeline score; click opens Jira. Same gray band as MS quick-review (RA/PR). */
 function renderMsStallCard(t){
   const reason = msStallReason(t);
   const dueLabel = msStallCalendarDueLabel(t);
   const priorityShort = (t.priority || '').replace(/^\d+ - /,'');
+  const bandColor = 'var(--band-pr)';
+  const bandBg = 'var(--band-pr-bg)';
   const tLink = jiraLink(t.key);
   const summaryHtml = tLink
     ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+escapeHtml(t.summary || t.key)+'</a>'
     : escapeHtml(t.summary || t.key);
   const openHref = tLink || '';
-  return '<div class="ticket-card ms-ticket ms-stall-card" style="--band-color:var(--band-orange)" data-key="'+escapeAttr(t.key)+'" data-ms-stall="1">' +
+  return '<div class="ticket-card ms-ticket ms-stall-card" style="--band-color:'+bandColor+'" data-key="'+escapeAttr(t.key)+'" data-ms-stall="1">' +
     '<div class="ticket-row"'+(openHref ? ' data-ms-stall-open="'+escapeAttr(openHref)+'"' : '')+'>' +
       '<div class="score-stack">' +
-        '<div class="score-badge ms-stall-mark" style="background:var(--band-orange-bg);color:var(--band-orange)" title="MS stall — not scored">—</div>' +
+        '<div class="score-badge ms-watch-mark" style="background:'+bandBg+';color:'+bandColor+'" title="Publish watch — MS still owns this; urgency is by due date only, not pipeline score">'+iconSvg('eye')+'</div>' +
         '<span class="ms-badge" title="Still with Managed Services">MS</span>' +
       '</div>' +
       '<div class="ticket-main">' +
@@ -67,7 +120,7 @@ function renderMsStallCard(t){
       '</div>' +
       '<div class="ticket-meta">' +
         '<div class="meta-col">Due<div class="val">'+escapeHtml(dueLabel)+'</div></div>' +
-        (priorityShort ? '<div class="priority-chip" style="background:var(--band-orange-bg);color:var(--band-orange)">'+escapeHtml(priorityShort)+'</div>' : '') +
+        (priorityShort ? '<div class="priority-chip" style="background:'+bandBg+';color:'+bandColor+'">'+escapeHtml(priorityShort)+'</div>' : '') +
       '</div>' +
     '</div>' +
   '</div>';
@@ -257,9 +310,10 @@ function bindNudgeCopyButtons(container){
 function renderTicketList(){
   const container = document.getElementById('ticketList');
   const tickets = soloSourceTickets();
-  const msStalls = collectMsStallTickets(STATE.data);
+  const eligibleMsStalls = collectMsStallTickets(STATE.data);
+  const showMsInAttention = STATE.showMsPublishWatch && eligibleMsStalls.length > 0;
   const prReviews = collectPrReviewTickets(prReviewSourceTickets(STATE.data), STATE.data);
-  if(!tickets.length && !msStalls.length && !prReviews.length){
+  if(!tickets.length && !showMsInAttention && !prReviews.length){
     container.innerHTML = '<div class="empty-state"><b>Nothing in focus right now</b>New requests will show up here the moment they are assigned to you.</div>';
     return;
   }
@@ -279,10 +333,13 @@ function renderTicketList(){
     });
   });
 
-  // MS stalls (still with MS, due ≤5 calendar days) → Needs Attention; sort by due; no pipeline score.
-  const stallKeys = new Set(msStalls.map(t => t.key));
+  const stallKeys = new Set(eligibleMsStalls.map(t => t.key));
   byLane.attention = byLane.attention.filter(item => !stallKeys.has(item.t.key));
-  const stallItems = msStalls.map(t => ({ t, msStall: true }));
+  const attentionScored = sortAttentionScoredItems(byLane.attention);
+  const visibleStallItems = showMsInAttention
+    ? eligibleMsStalls.map(t => ({ t, msStall: true }))
+    : [];
+  byLane.attention = attentionScored.concat(visibleStallItems);
 
   // PR reviews lane — dedicated list; omit section when empty. Still dual-list in other lanes.
   byLane['pr-reviews'] = prReviews;
@@ -292,8 +349,7 @@ function renderTicketList(){
     : '';
 
   container.innerHTML = commentsWarning + SOLO_LANES.map(lane => {
-    const scoredItems = byLane[lane.id] || [];
-    const items = lane.id === 'attention' ? stallItems.concat(scoredItems) : scoredItems;
+    const items = byLane[lane.id] || [];
     if(lane.omitIfEmpty && !items.length) return '';
     let cards;
     if(!items.length){
@@ -309,15 +365,31 @@ function renderTicketList(){
     } else {
       cards = items.map(renderTicketCard).join('');
     }
+    const msHiddenHint = (lane.id === 'attention' && eligibleMsStalls.length && !showMsInAttention)
+      ? '<div class="lane-hint-secondary">'+eligibleMsStalls.length+' MS publish watch hidden</div>'
+      : '';
+    const msToggle = lane.id === 'attention' ? msPublishWatchToggleHtml(eligibleMsStalls.length) : '';
     return '<div class="solo-lane" data-lane="'+lane.id+'">' +
       '<div class="lane-header">' +
-        '<div class="lane-title">'+lane.title+'</div>' +
+        '<div class="lane-header-main">' +
+          '<div class="lane-title">'+lane.title+'</div>' +
+          msToggle +
+        '</div>' +
         '<div class="lane-count">'+items.length+'</div>' +
       '</div>' +
       '<div class="lane-hint">'+lane.hint+'</div>' +
+      msHiddenHint +
       '<div class="lane-list">'+cards+'</div>' +
     '</div>';
   }).join('');
+
+  const msToggleInput = container.querySelector('[data-ms-publish-toggle]');
+  if(msToggleInput){
+    msToggleInput.addEventListener('change', () => {
+      saveMsPublishWatchPref(msToggleInput.checked);
+      renderTicketList();
+    });
+  }
 
   container.querySelectorAll('[data-toggle]').forEach(el => {
     el.addEventListener('click', (e) => {
@@ -1559,4 +1631,5 @@ document.getElementById('configResetBtn').addEventListener('click', resetConfigT
 })();
 
 loadSavedConfig();
+STATE.showMsPublishWatch = loadMsPublishWatchPref();
 loadAll(false);

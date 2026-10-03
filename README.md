@@ -32,8 +32,9 @@ Sidebar **Validate**: paste a WDW prod dining URL (`disneyworld.disney.go.com/di
 
 1. Display name
 2. **Site:** Production, Stage (`stage.` host), Latest (`latest.` host)
-3. **D-Scribe (six links):** EVO040 / EVO065 / LGCY065 — each **Building Blocks** + **Root/Page Level** (facility-deep when indexed; otherwise publication-level folders + a note)
-4. **Locales** on the latest host (path mid-segment, casing preserved): `es-us`, `en_CA`, `fr-ca`, `es-ar`, `es-mx`, `es-pe`, `es-co`, `es-cl`, `pt-br`
+3. **D-Scribe:** EVO040 **Building Blocks**; EVO065 **Building Blocks** + **Root/Page Level** (facility-deep when indexed; otherwise publication-level folders + a note). LGCY065 and EVO040 Root are omitted in the UI for now.
+4. **MDX app** deep link: `mdx://finder/detail?facilityId=…;entityType=…` (offline from `data/mdx-facility-by-slug.json`; rebuild with `node scripts/mdx/build-mdx-slug-index.js` when `DSCRIBE_DATA` points at dining-content-ops data)
+5. **Locales** on the latest host (path mid-segment, casing preserved): `es-us`, `en_CA`, `fr-ca`, `es-ar`, `es-mx`, `es-pe`, `es-co`, `es-cl`, `pt-br`
 
 Resolve is offline (local slug index + URL builders). No live Tridion call. Explorer links open in your browser (VPN/session as usual).
 
@@ -51,7 +52,15 @@ python3 scripts/dscribe/build-dining-slug-index.py
 
 Writes [`data/dining-slug-index.json`](data/dining-slug-index.json) (schema **v2**: per pub slot `bbParentChain` + `pageParentChain`). The repo seed includes a few facilities (including Grandstand Spirits shape); empty chains fall back to pub-level explorers until you rebuild from crawl locally.
 
-API (same logic as the UI): `GET /api/dining/resolve?url=…`
+API (same logic as the UI): `GET /api/dining/resolve?url=…` · offline CMS tree: `GET /api/dining/graph?url=…`
+
+**Content map** lists only D-Scribe-openable components/pages (no folder chains). Sort order uses overlay roles when present — build a local role index once (requires `DSCRIBE_DATA` and `crawl_overlay.json`):
+
+```bash
+node scripts/dscribe/build-component-role-index.js
+```
+
+Writes `data/component-role-by-id.json` (~7MB, gitignored).
 
 If the server was started before Validate landed, the UI falls back to the browser: inlined resolver in `validate.js` (kept in sync with `scripts/dscribe/*`) + `data/dining-slug-index.json`. Restart `npm start` and confirm the console line `Validate: /api/dining/resolve ready`.
 
