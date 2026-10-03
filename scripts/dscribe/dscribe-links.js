@@ -2,8 +2,13 @@
 
 const DSCRIBE_BASE = 'https://dpep-dscribe-production.tridion.sdlproducts.com';
 
-/** Parent publish publications (WDW). */
+/** Content / parent publish publications (WDW). */
 const PUBLISH_PUBS = {
+  evo040: {
+    id: '281',
+    label: 'EVO040 WDW (en) Content',
+    structureSourcePub: '281'
+  },
   evo065: {
     id: '934',
     label: 'EVO065 WDW Parent (All) Publish',
@@ -16,6 +21,19 @@ const PUBLISH_PUBS = {
   }
 };
 
+/** Locale mid-path segments on latest host (casing preserved). */
+const LOCALES = [
+  'es-us',
+  'en_CA',
+  'fr-ca',
+  'es-ar',
+  'es-mx',
+  'es-pe',
+  'es-co',
+  'es-cl',
+  'pt-br'
+];
+
 const ROOT_FOLDER_SUFFIX = '3-4';
 const BUILDING_BLOCKS_SUFFIX = '1-2';
 
@@ -24,7 +42,7 @@ function explorerContainerUrl(pubId, folderTcmSegments) {
   (folderTcmSegments || []).forEach((seg) => parts.push(seg));
   return (
     DSCRIBE_BASE +
-    '/ui/explorer?container=' +
+    '/ui/#/explorer?container=' +
     parts.join('_') +
     '&panel=information'
   );
@@ -34,7 +52,10 @@ function explorerWithItem(pubId, folderChainPublish, itemTcmPublish) {
   const parts = ['cme:publications_tcm:0-' + pubId + '-1'];
   (folderChainPublish || []).forEach((seg) => parts.push(seg));
   let url =
-    DSCRIBE_BASE + '/ui/explorer?container=' + parts.join('_') + '&panel=information';
+    DSCRIBE_BASE +
+    '/ui/#/explorer?container=' +
+    parts.join('_') +
+    '&panel=information';
   if (itemTcmPublish) {
     url += '&item=' + encodeURIComponent(itemTcmPublish);
   }
@@ -62,6 +83,37 @@ function publicationBuildingBlocksExplorer(pubKey) {
   return explorerContainerUrl(pub.id, ['tcm:' + pub.id + '-' + BUILDING_BLOCKS_SUFFIX]);
 }
 
+/**
+ * Facility Building Blocks explorer: BB root + remapped bbParentChain (-2 folders).
+ * @param {'evo040'|'evo065'|'lgcy065'} pubKey
+ * @param {string[]} bbParentChainStructure - folder tcm ids from crawl source pub
+ */
+function facilityBuildingBlocksExplorer(pubKey, bbParentChainStructure) {
+  const pub = PUBLISH_PUBS[pubKey];
+  if (!pub) return null;
+  const chain = ['tcm:' + pub.id + '-' + BUILDING_BLOCKS_SUFFIX];
+  (bbParentChainStructure || []).forEach((id) => {
+    chain.push(remapTcmToPublishPub(id, pub.id));
+  });
+  return explorerContainerUrl(pub.id, chain);
+}
+
+/**
+ * Facility Root/Page Level explorer: Root + remapped pageParentChain (-4 folders).
+ * Ends on the facility folder (no &item= page selection).
+ * @param {'evo040'|'evo065'|'lgcy065'} pubKey
+ * @param {string[]} pageParentChainStructure - folder tcm ids from crawl source pub
+ */
+function facilityRootPageExplorer(pubKey, pageParentChainStructure) {
+  const pub = PUBLISH_PUBS[pubKey];
+  if (!pub) return null;
+  const chain = ['tcm:' + pub.id + '-' + ROOT_FOLDER_SUFFIX];
+  (pageParentChainStructure || []).forEach((id) => {
+    chain.push(remapTcmToPublishPub(id, pub.id));
+  });
+  return explorerContainerUrl(pub.id, chain);
+}
+
 function editorPageUrl(publishPubId, itemNumber) {
   const item = 'tcm:' + publishPubId + '-' + itemNumber + '-64';
   return (
@@ -75,9 +127,9 @@ function editorPageUrl(publishPubId, itemNumber) {
 }
 
 /**
- * Build publish-layer folder explorer for a structure page.
- * @param {'evo065'|'lgcy065'} pubKey
- * @param {string[]} ancestorChainStructure - tcm ids from crawl (283 or 627 pub)
+ * Build publish-layer folder explorer for a structure page (legacy helper).
+ * @param {'evo040'|'evo065'|'lgcy065'} pubKey
+ * @param {string[]} ancestorChainStructure - tcm ids from crawl
  * @param {number} itemNumber - page item number
  */
 function pageFolderExplorer(pubKey, ancestorChainStructure, itemNumber) {
@@ -99,6 +151,13 @@ function titleCaseSlug(slug) {
     .join(' ');
 }
 
+function stripEnvHostPrefix(hostname) {
+  let host = String(hostname || '');
+  if (host.startsWith('latest.')) host = host.slice(7);
+  if (host.startsWith('stage.')) host = host.slice(6);
+  return host;
+}
+
 function normalizeProdUrl(raw) {
   const trimmed = String(raw || '').trim();
   if (!trimmed) return { error: 'Paste a URL first.' };
@@ -114,6 +173,7 @@ function normalizeProdUrl(raw) {
   }
   u.search = '';
   u.hash = '';
+  u.hostname = stripEnvHostPrefix(u.hostname);
   let path = u.pathname;
   if (!path.endsWith('/')) path += '/';
   const segments = path.split('/').filter(Boolean);
@@ -128,9 +188,8 @@ function normalizeProdUrl(raw) {
   const slug = after[after.length - 1];
   const parkSegment = after.length > 1 ? after[0] : '';
   const lookupKey = parkSegment ? parkSegment + '/' + slug : slug;
-  // Canonical US prod path (strip locale prefix like en_CA before /dining/)
-  const canonicalPath = '/dining/' + after.join('/') + (after.length ? '' : '');
-  u.pathname = canonicalPath.endsWith('/') ? canonicalPath : canonicalPath + '/';
+  const canonicalPath = '/dining/' + after.join('/') + '/';
+  u.pathname = canonicalPath;
   return {
     prodUrl: u.toString(),
     slug,
@@ -142,8 +201,7 @@ function normalizeProdUrl(raw) {
 
 function stageUrlFromProd(prodUrl, localePrefix) {
   const u = new URL(prodUrl);
-  const host = u.hostname;
-  if (host.startsWith('stage.')) return u.toString();
+  const host = stripEnvHostPrefix(u.hostname);
   u.hostname = 'stage.' + host;
   if (localePrefix) {
     const seg = localePrefix.replace(/^\/+|\/+$/g, '');
@@ -155,19 +213,42 @@ function stageUrlFromProd(prodUrl, localePrefix) {
   return u.toString();
 }
 
+function latestUrlFromProd(prodUrl) {
+  const u = new URL(prodUrl);
+  const host = stripEnvHostPrefix(u.hostname);
+  u.hostname = 'latest.' + host;
+  return u.toString();
+}
+
+function localeLatestUrl(prodUrl, locale) {
+  const u = new URL(latestUrlFromProd(prodUrl));
+  const seg = String(locale || '').replace(/^\/+|\/+$/g, '');
+  if (!seg) return u.toString();
+  const parts = u.pathname.split('/').filter(Boolean);
+  if (parts[0] !== seg) {
+    u.pathname = '/' + seg + u.pathname;
+  }
+  return u.toString();
+}
+
 const api = {
   DSCRIBE_BASE,
   PUBLISH_PUBS,
+  LOCALES,
   explorerContainerUrl,
   explorerWithItem,
   remapTcmToPublishPub,
   publicationRootExplorer,
   publicationBuildingBlocksExplorer,
+  facilityBuildingBlocksExplorer,
+  facilityRootPageExplorer,
   editorPageUrl,
   pageFolderExplorer,
   titleCaseSlug,
   normalizeProdUrl,
-  stageUrlFromProd
+  stageUrlFromProd,
+  latestUrlFromProd,
+  localeLatestUrl
 };
 
 if (typeof globalThis !== 'undefined') {

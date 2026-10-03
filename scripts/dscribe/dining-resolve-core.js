@@ -10,32 +10,64 @@ function lookupEntry(entries, lookupKey, slug) {
   return null;
 }
 
-function treePayload(links, pubKey, pageEntry) {
-  const pub = links.PUBLISH_PUBS[pubKey];
-  if (!pageEntry) {
-    return {
-      pageTcm: null,
-      pageTitle: null,
-      editorPageUrl: null,
-      explorerFolderUrl: null,
-      publicationRootUrl: links.publicationRootExplorer(pubKey),
-      publicationBuildingBlocksUrl: links.publicationBuildingBlocksExplorer(pubKey),
-      note: 'No structure page in index for this slug.'
-    };
+function slotForPub(entry, pubKey) {
+  if (!entry) return null;
+  if (pubKey === 'evo040') return entry.evo040 || null;
+  if (pubKey === 'evo065') return entry.evo065 || entry.evo || null;
+  if (pubKey === 'lgcy065') return entry.lgcy065 || entry.lgcy || null;
+  return null;
+}
+
+function pageChainFromSlot(slot) {
+  if (!slot) return [];
+  if (Array.isArray(slot.pageParentChain) && slot.pageParentChain.length) {
+    return slot.pageParentChain;
   }
-  const itemNumber = pageEntry.itemNumber;
+  if (Array.isArray(slot.parentChain) && slot.parentChain.length) {
+    return slot.parentChain;
+  }
+  return [];
+}
+
+function bbChainFromSlot(slot) {
+  if (!slot) return [];
+  if (Array.isArray(slot.bbParentChain) && slot.bbParentChain.length) {
+    return slot.bbParentChain;
+  }
+  return [];
+}
+
+/**
+ * Category payload: Building Blocks + Root/Page Level (facility-deep when indexed).
+ * @param {object} links - dscribe-links module
+ * @param {'evo040'|'evo065'|'lgcy065'} pubKey
+ * @param {object|null} slot - index slot for this pub
+ */
+function categoryPayload(links, pubKey, slot) {
+  const bbChain = bbChainFromSlot(slot);
+  const pageChain = pageChainFromSlot(slot);
+  const buildingBlocksUrl = links.facilityBuildingBlocksExplorer(pubKey, bbChain);
+  const rootPageLevelUrl = links.facilityRootPageExplorer(pubKey, pageChain);
+
+  let note = null;
+  if (!slot) {
+    note =
+      'No facility folders in index for this slug — opening publication-level folders. Rebuild data/dining-slug-index.json from crawl.';
+  } else if (!bbChain.length && !pageChain.length) {
+    note =
+      'Index has no BB/page folder chains — opening publication-level folders. Rebuild with DSCRIBE_DATA crawl.';
+  } else if (!bbChain.length) {
+    note =
+      'No Building Blocks folder chain in index — BB link opens publication Building Blocks.';
+  } else if (!pageChain.length) {
+    note =
+      'No Root/page folder chain in index — Root link opens publication Root.';
+  }
+
   return {
-    pageTcm: links.remapTcmToPublishPub(pageEntry.pageTcm, pub.id),
-    pageTitle: pageEntry.pageTitle,
-    editorPageUrl: links.editorPageUrl(pub.id, itemNumber),
-    explorerFolderUrl: links.pageFolderExplorer(
-      pubKey,
-      pageEntry.parentChain || [],
-      itemNumber
-    ),
-    publicationRootUrl: links.publicationRootExplorer(pubKey),
-    publicationBuildingBlocksUrl: links.publicationBuildingBlocksExplorer(pubKey),
-    note: null
+    buildingBlocksUrl,
+    rootPageLevelUrl,
+    note
   };
 }
 
@@ -61,9 +93,20 @@ function resolveDiningUrl(rawUrl, links, entries) {
     warnings.push(
       'Slug not found in dining index — showing title from URL only. Rebuild data/dining-slug-index.json from crawl.'
     );
-  } else if (!entry.evo && !entry.lgcy) {
-    warnings.push('Index entry has no EVO or LGCY page metadata.');
+  } else {
+    const hasAny =
+      slotForPub(entry, 'evo040') ||
+      slotForPub(entry, 'evo065') ||
+      slotForPub(entry, 'lgcy065');
+    if (!hasAny) {
+      warnings.push('Index entry has no EVO040 / EVO065 / LGCY065 folder metadata.');
+    }
   }
+
+  const locales = (links.LOCALES || []).map((locale) => ({
+    locale,
+    url: links.localeLatestUrl(norm.prodUrl, locale)
+  }));
 
   return {
     ok: true,
@@ -73,14 +116,21 @@ function resolveDiningUrl(rawUrl, links, entries) {
     displayName,
     prodUrl: norm.prodUrl,
     stageUrl: links.stageUrlFromProd(norm.prodUrl),
-    stageUrlEnCa: links.stageUrlFromProd(norm.prodUrl, 'en_CA'),
-    evo: treePayload(links, 'evo065', entry && entry.evo),
-    lgcy: treePayload(links, 'lgcy065', entry && entry.lgcy),
+    latestUrl: links.latestUrlFromProd(norm.prodUrl),
+    locales,
+    evo040: categoryPayload(links, 'evo040', slotForPub(entry, 'evo040')),
+    evo065: categoryPayload(links, 'evo065', slotForPub(entry, 'evo065')),
+    lgcy065: categoryPayload(links, 'lgcy065', slotForPub(entry, 'lgcy065')),
     warnings
   };
 }
 
-const api = { lookupEntry, treePayload, resolveDiningUrl };
+const api = {
+  lookupEntry,
+  slotForPub,
+  categoryPayload,
+  resolveDiningUrl
+};
 
 if (typeof globalThis !== 'undefined') {
   globalThis.DiningResolveCore = api;

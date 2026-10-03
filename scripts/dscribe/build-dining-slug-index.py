@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Build compact WDW dining slug index from DScribe crawl (items.jsonl)."""
+"""Build compact WDW dining slug index from DScribe crawl (items.jsonl).
+
+Indexes Building Blocks (-2) and Root/page (-4) folder chains for:
+  EVO040 content pub 281 (no remap)
+  EVO065 structure 283 → publish 934
+  LGCY065 structure 627 → publish 914
+"""
 
 from __future__ import annotations
 
@@ -11,8 +17,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "data" / "dining-slug-index.json"
 
-EVO_PAGE_PUB = "283"
-LGCY_PAGE_PUB = "627"
+# Crawl source pubs → index slot key
+PUB_SLOTS = {
+    "281": "evo040",
+    "283": "evo065",
+    "627": "lgcy065",
+}
+
+SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$", re.I)
 
 
 def items_path() -> Path:
@@ -25,19 +37,26 @@ def items_path() -> Path:
     return home / "dscribe" / "crawl" / "items.jsonl"
 
 
+def slug_from_title(title: str) -> str | None:
+    t = (title or "").strip()
+    if t and SLUG_RE.match(t):
+        return t.lower()
+    return None
+
+
 def slug_from_page(rec: dict) -> str | None:
-    title = (rec.get("title") or "").strip()
-    if title and re.match(r"^[a-z0-9]+(-[a-z0-9]+)*$", title):
-        return title
+    s = slug_from_title(rec.get("title") or "")
+    if s:
+        return s
     webdav = rec.get("webdav") or ""
     m = re.search(r"/([^/]+)\.tpg$", webdav)
-    if m:
+    if m and SLUG_RE.match(m.group(1)):
         return m.group(1).lower()
     path = rec.get("path") or ""
     parts = [p for p in path.split("\\") if p]
     if parts:
         last = parts[-1]
-        if re.match(r"^[a-z0-9]+(-[a-z0-9]+)*$", last, re.I):
+        if SLUG_RE.match(last):
             return last.lower()
     return None
 
@@ -54,91 +73,199 @@ def park_from_path(path: str) -> str:
     return ""
 
 
-def item_number(tcm_id: str) -> int | None:
-    m = re.match(r"tcm:\d+-(\d+)-64$", tcm_id)
+def item_number(tcm_id: str, suffix: str) -> int | None:
+    m = re.match(rf"tcm:\d+-(\d+)-{re.escape(suffix)}$", tcm_id)
     if m:
         return int(m.group(1))
     return None
 
 
+def pub_from_id(tcm_id: str) -> str:
+    if ":" not in (tcm_id or ""):
+        return ""
+    return tcm_id.split(":")[1].split("-")[0]
+
+
+def path_mentions_dining(rec: dict) -> bool:
+    path = (rec.get("path") or "").lower()
+    webdav = (rec.get("webdav") or "").lower()
+    return "dining" in path or "dining" in webdav
+
+
+def walk_parent_chain(by_id: dict, start_parent: str | None) -> list[str]:
+    """Walk parents upward; return root→leaf order (excludes publication root)."""
+    chain: list[str] = []
+    cur = start_parent
+    seen: set[str] = set()
+    while cur and cur not in seen:
+        seen.add(cur)
+        # Stop before publication / org roots (tcm:0-…) and BB/Root synthetic tops
+        if str(cur).startswith("tcm:0-"):
+            break
+        body = str(cur).split(":")[1] if ":" in str(cur) else ""
+        # Publication Root (…-3-4) / Building Blocks (…-1-2) — not part of facility chain
+        if body.endswith("-3-4") or body.endswith("-1-2"):
+            break
+        chain.append(cur)
+        parent_rec = by_id.get(cur)
+        if not parent_rec:
+            break
+        p = parent_rec.get("parent")
+        if not p or str(p).startswith("tcm:0-"):
+            break
+        # Also stop if next parent is BB/Root folder
+        pbody = str(p).split(":")[1] if ":" in str(p) else ""
+        if pbody.endswith("-3-4") or pbody.endswith("-1-2"):
+            break
+        cur = p
+    chain.reverse()
+    return chain
+
+
+def display_name_from_slug(slug: str, title: str | None) -> str:
+    if title and title != slug and not SLUG_RE.match(title or ""):
+        return title
+    if title and title != slug:
+        return " ".join(w.capitalize() for w in slug.split("-"))
+    return " ".join(w.capitalize() for w in slug.split("-"))
+
+
+def empty_slot() -> dict:
+    return {
+        "pageTcm": None,
+        "itemNumber": None,
+        "pageTitle": None,
+        "bbParentChain": [],
+        "pageParentChain": [],
+    }
+
+
+def ensure_entry(index: dict, key: str, slug: str, park: str, title: str) -> dict:
+    slot = index.setdefault(
+        key,
+        {
+            "slug": slug,
+            "parkSegment": park,
+            "displayName": title,
+            "evo040": None,
+            "evo065": None,
+            "lgcy065": None,
+        },
+    )
+    if slot.get("displayName") == slug or len(title) > len(str(slot.get("displayName", ""))):
+        slot["displayName"] = title
+    return slot
+
+
+def ensure_tree_slot(entry: dict, tree: str) -> dict:
+    if entry.get(tree) is None:
+        entry[tree] = empty_slot()
+    return entry[tree]
+
+
+def index_page(by_id: dict, index: dict, rec: dict, tree: str) -> None:
+    if rec.get("type") not in ("Page", None) and not str(rec.get("id", "")).endswith("-64"):
+        # Prefer typed Page; still accept -64 ids
+        if not str(rec.get("id", "")).endswith("-64"):
+            return
+    rid = rec.get("id", "")
+    if not rid.endswith("-64"):
+        return
+    if not path_mentions_dining(rec):
+        return
+    slug = slug_from_page(rec)
+    if not slug:
+        return
+    park = park_from_path(rec.get("path") or "")
+    key = f"{park}/{slug}" if park else slug
+    num = item_number(rid, "64")
+    if not num:
+        return
+    # pageParentChain = folders from under Root down to page's parent (facility folder)
+    chain = walk_parent_chain(by_id, rec.get("parent"))
+    title = display_name_from_slug(slug, rec.get("title"))
+    entry = ensure_entry(index, key, slug, park, title)
+    tree_slot = ensure_tree_slot(entry, tree)
+    if not tree_slot.get("pageParentChain"):
+        tree_slot["pageParentChain"] = chain
+        tree_slot["pageTcm"] = rid
+        tree_slot["itemNumber"] = num
+        tree_slot["pageTitle"] = rec.get("title")
+
+
+def index_bb_folder(by_id: dict, index: dict, rec: dict, tree: str) -> None:
+    rid = rec.get("id", "")
+    if not rid.endswith("-2"):
+        return
+    # Skip publication Building Blocks root itself
+    body = rid.split(":")[1] if ":" in rid else ""
+    if body.endswith("-1-2"):
+        return
+    if not path_mentions_dining(rec):
+        # Also accept slug-titled folders even if path omits dining
+        slug = slug_from_title(rec.get("title") or "")
+        if not slug:
+            return
+    else:
+        slug = slug_from_title(rec.get("title") or "")
+        if not slug:
+            # try last path segment
+            parts = [p for p in (rec.get("path") or "").split("\\") if p]
+            if parts and SLUG_RE.match(parts[-1]):
+                slug = parts[-1].lower()
+            else:
+                return
+    park = park_from_path(rec.get("path") or "")
+    key = f"{park}/{slug}" if park else slug
+    # Include this folder as the leaf of the BB chain
+    ancestors = walk_parent_chain(by_id, rec.get("parent"))
+    chain = ancestors + [rid]
+    title = display_name_from_slug(slug, rec.get("title"))
+    entry = ensure_entry(index, key, slug, park, title)
+    tree_slot = ensure_tree_slot(entry, tree)
+    if not tree_slot.get("bbParentChain"):
+        tree_slot["bbParentChain"] = chain
+
+
 def build_index(by_id: dict) -> dict:
     index: dict = {}
 
-    def add_entry(rec: dict, tree: str, pub_prefix: str):
-        if rec.get("type") != "Page":
-            return
-        pub = rec.get("id", "").split("-")[0].split(":")[1] if ":" in rec.get("id", "") else ""
-        if pub != pub_prefix:
-            return
-        path = rec.get("path") or ""
-        if "dining" not in path.lower() and "dining" not in (rec.get("webdav") or "").lower():
-            return
-        slug = slug_from_page(rec)
-        if not slug:
-            return
-        park = park_from_path(path)
-        key = f"{park}/{slug}" if park else slug
-        num = item_number(rec.get("id", ""))
-        if not num:
-            return
-        parent = rec.get("parent")
-        chain: list[str] = []
-        cur = parent
-        seen: set[str] = set()
-        while cur and cur not in seen:
-            seen.add(cur)
-            chain.append(cur)
-            parent_rec = by_id.get(cur)
-            if not parent_rec:
-                break
-            p = parent_rec.get("parent")
-            if not p or str(p).startswith("tcm:0-"):
-                break
-            cur = p
-        chain.reverse()
-        title = rec.get("title") or slug
-        if title == slug:
-            title = " ".join(w.capitalize() for w in slug.split("-"))
-
-        slot = index.setdefault(
-            key,
-            {"slug": slug, "parkSegment": park, "displayName": title, "evo": None, "lgcy": None},
-        )
-        if slot.get("displayName") == slug or len(title) > len(str(slot.get("displayName", ""))):
-            slot["displayName"] = title
-        entry = {
-            "pageTcm": rec["id"],
-            "itemNumber": num,
-            "pageTitle": rec.get("title"),
-            "parentChain": chain,
-        }
-        if tree == "evo":
-            if slot["evo"] is None:
-                slot["evo"] = entry
-        else:
-            if slot["lgcy"] is None:
-                slot["lgcy"] = entry
-
     for rec in by_id.values():
         rid = rec.get("id", "")
-        if rid.startswith(f"tcm:{EVO_PAGE_PUB}-") and rid.endswith("-64"):
-            add_entry(rec, "evo", EVO_PAGE_PUB)
-        elif rid.startswith(f"tcm:{LGCY_PAGE_PUB}-") and rid.endswith("-64"):
-            add_entry(rec, "lgcy", LGCY_PAGE_PUB)
+        pub = pub_from_id(rid)
+        tree = PUB_SLOTS.get(pub)
+        if not tree:
+            continue
+        if rid.endswith("-64"):
+            index_page(by_id, index, rec, tree)
+        elif rid.endswith("-2"):
+            index_bb_folder(by_id, index, rec, tree)
 
-    return {"version": 1, "entries": index}
+    # For pages that have pageParentChain but empty bb — leave bb empty (UI falls back)
+    return {"version": 2, "entries": index}
 
 
 def main() -> None:
     path = items_path()
     if not path.is_file():
-        raise SystemExit(f"Crawl not found: {path}\nSet DSCRIBE_DATA to your data directory.")
+        raise SystemExit(
+            f"Crawl not found: {path}\n"
+            "Set DSCRIBE_DATA to your data directory "
+            "(e.g. …/disney-dining-content-ops-full/data), then re-run:\n"
+            "  python3 scripts/dscribe/build-dining-slug-index.py"
+        )
     by_id: dict = {}
     with path.open(encoding="utf-8") as f:
         for line in f:
+            line = line.strip()
+            if not line:
+                continue
             try:
-                by_id[json.loads(line)["id"]] = json.loads(line)
-            except (json.JSONDecodeError, KeyError):
+                rec = json.loads(line)
+                rid = rec.get("id")
+                if rid:
+                    by_id[rid] = rec
+            except (json.JSONDecodeError, TypeError, AttributeError):
                 continue
     data = build_index(by_id)
     OUT.parent.mkdir(parents=True, exist_ok=True)

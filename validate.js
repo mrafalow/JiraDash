@@ -4,22 +4,17 @@
   if(globalThis.ValidateResolverInline) return;
   const DSCRIBE_BASE = 'https://dpep-dscribe-production.tridion.sdlproducts.com';
   const PUBLISH_PUBS = {
+    evo040: { id: '281', structureSourcePub: '281' },
     evo065: { id: '934', structureSourcePub: '283' },
     lgcy065: { id: '914', structureSourcePub: '627' }
   };
+  const LOCALES = ['es-us','en_CA','fr-ca','es-ar','es-mx','es-pe','es-co','es-cl','pt-br'];
   const ROOT = '3-4';
   const BB = '1-2';
   function explorerContainerUrl(pubId, segs) {
     const parts = ['cme:publications_tcm:0-' + pubId + '-1'];
     (segs || []).forEach((s) => parts.push(s));
-    return DSCRIBE_BASE + '/ui/explorer?container=' + parts.join('_') + '&panel=information';
-  }
-  function explorerWithItem(pubId, chain, itemTcm) {
-    const parts = ['cme:publications_tcm:0-' + pubId + '-1'];
-    (chain || []).forEach((s) => parts.push(s));
-    let url = DSCRIBE_BASE + '/ui/explorer?container=' + parts.join('_') + '&panel=information';
-    if(itemTcm) url += '&item=' + encodeURIComponent(itemTcm);
-    return url;
+    return DSCRIBE_BASE + '/ui/#/explorer?container=' + parts.join('_') + '&panel=information';
   }
   function remapTcm(tcmId, pubId) {
     if(!tcmId || !pubId) return tcmId;
@@ -27,22 +22,26 @@
     if(p.length < 2) return tcmId;
     return p.length >= 3 ? 'tcm:' + pubId + '-' + p[1] + '-' + p[2] : 'tcm:' + pubId + '-' + p[1];
   }
-  function pubRoot(k){ const id = PUBLISH_PUBS[k].id; return explorerContainerUrl(id, ['tcm:' + id + '-' + ROOT]); }
-  function pubBB(k){ const id = PUBLISH_PUBS[k].id; return explorerContainerUrl(id, ['tcm:' + id + '-' + BB]); }
-  function editorUrl(pubId, num){
-    const item = 'tcm:' + pubId + '-' + num + '-64';
-    return DSCRIBE_BASE + '/ui/editor/page?activeItem=' + encodeURIComponent(item) +
-      '&item=' + encodeURIComponent(item) + '&tab=general.constraints';
+  function facilityBB(k, chain){
+    const id = PUBLISH_PUBS[k].id;
+    const c = ['tcm:' + id + '-' + BB];
+    (chain || []).forEach((t) => c.push(remapTcm(t, id)));
+    return explorerContainerUrl(id, c);
   }
-  function folderExplorer(k, chain, num){
-    const pub = PUBLISH_PUBS[k];
-    if(!pub || !num) return null;
-    const c = ['tcm:' + pub.id + '-' + ROOT];
-    (chain || []).forEach((id) => c.push(remapTcm(id, pub.id)));
-    return explorerWithItem(pub.id, c, 'tcm:' + pub.id + '-' + num + '-64');
+  function facilityRoot(k, chain){
+    const id = PUBLISH_PUBS[k].id;
+    const c = ['tcm:' + id + '-' + ROOT];
+    (chain || []).forEach((t) => c.push(remapTcm(t, id)));
+    return explorerContainerUrl(id, c);
   }
   function titleCase(slug){
     return String(slug || '').split('-').filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  }
+  function stripEnv(host){
+    let h = String(host || '');
+    if(h.startsWith('latest.')) h = h.slice(7);
+    if(h.startsWith('stage.')) h = h.slice(6);
+    return h;
   }
   function normalizeProdUrl(raw){
     const trimmed = String(raw || '').trim();
@@ -51,6 +50,7 @@
     try { u = new URL(trimmed); } catch (_) { return { error: 'Invalid URL.' }; }
     if(!u.hostname.toLowerCase().includes('disney.go.com')) return { error: 'Expected a disney.go.com URL (v1: WDW dining).' };
     u.search = ''; u.hash = '';
+    u.hostname = stripEnv(u.hostname);
     let path = u.pathname;
     if(!path.endsWith('/')) path += '/';
     const segments = path.split('/').filter(Boolean);
@@ -65,7 +65,7 @@
   }
   function stageFromProd(prodUrl, loc){
     const u = new URL(prodUrl);
-    if(!u.hostname.startsWith('stage.')) u.hostname = 'stage.' + u.hostname;
+    u.hostname = 'stage.' + stripEnv(u.hostname);
     if(loc){
       const seg = loc.replace(/^\/+|\/+$/g, '');
       const parts = u.pathname.split('/').filter(Boolean);
@@ -73,10 +73,24 @@
     }
     return u.toString();
   }
+  function latestFromProd(prodUrl){
+    const u = new URL(prodUrl);
+    u.hostname = 'latest.' + stripEnv(u.hostname);
+    return u.toString();
+  }
+  function localeLatest(prodUrl, locale){
+    const u = new URL(latestFromProd(prodUrl));
+    const seg = String(locale || '').replace(/^\/+|\/+$/g, '');
+    if(!seg) return u.toString();
+    const parts = u.pathname.split('/').filter(Boolean);
+    if(parts[0] !== seg) u.pathname = '/' + seg + u.pathname;
+    return u.toString();
+  }
   const links = {
-    PUBLISH_PUBS, remapTcmToPublishPub: remapTcm, publicationRootExplorer: pubRoot,
-    publicationBuildingBlocksExplorer: pubBB, editorPageUrl: editorUrl, pageFolderExplorer: folderExplorer,
-    titleCaseSlug: titleCase, normalizeProdUrl, stageUrlFromProd: stageFromProd
+    PUBLISH_PUBS, LOCALES, remapTcmToPublishPub: remapTcm,
+    facilityBuildingBlocksExplorer: facilityBB, facilityRootPageExplorer: facilityRoot,
+    titleCaseSlug: titleCase, normalizeProdUrl, stageUrlFromProd: stageFromProd,
+    latestUrlFromProd: latestFromProd, localeLatestUrl: localeLatest
   };
   function lookupEntry(entries, lookupKey, slug){
     if(!entries) return null;
@@ -87,20 +101,40 @@
     }
     return null;
   }
-  function treePayload(pubKey, pageEntry){
-    const pub = links.PUBLISH_PUBS[pubKey];
-    if(!pageEntry){
-      return {
-        pageTcm: null, pageTitle: null, editorPageUrl: null, explorerFolderUrl: null,
-        publicationRootUrl: pubRoot(pubKey), publicationBuildingBlocksUrl: pubBB(pubKey),
-        note: 'No structure page in index for this slug.'
-      };
+  function slotForPub(entry, pubKey){
+    if(!entry) return null;
+    if(pubKey === 'evo040') return entry.evo040 || null;
+    if(pubKey === 'evo065') return entry.evo065 || entry.evo || null;
+    if(pubKey === 'lgcy065') return entry.lgcy065 || entry.lgcy || null;
+    return null;
+  }
+  function pageChain(slot){
+    if(!slot) return [];
+    if(Array.isArray(slot.pageParentChain) && slot.pageParentChain.length) return slot.pageParentChain;
+    if(Array.isArray(slot.parentChain) && slot.parentChain.length) return slot.parentChain;
+    return [];
+  }
+  function bbChain(slot){
+    if(!slot || !Array.isArray(slot.bbParentChain)) return [];
+    return slot.bbParentChain;
+  }
+  function categoryPayload(pubKey, slot){
+    const bbc = bbChain(slot);
+    const pc = pageChain(slot);
+    let note = null;
+    if(!slot){
+      note = 'No facility folders in index for this slug — opening publication-level folders. Rebuild data/dining-slug-index.json from crawl.';
+    } else if(!bbc.length && !pc.length){
+      note = 'Index has no BB/page folder chains — opening publication-level folders. Rebuild with DSCRIBE_DATA crawl.';
+    } else if(!bbc.length){
+      note = 'No Building Blocks folder chain in index — BB link opens publication Building Blocks.';
+    } else if(!pc.length){
+      note = 'No Root/page folder chain in index — Root link opens publication Root.';
     }
-    const n = pageEntry.itemNumber;
     return {
-      pageTcm: remapTcm(pageEntry.pageTcm, pub.id), pageTitle: pageEntry.pageTitle,
-      editorPageUrl: editorUrl(pub.id, n), explorerFolderUrl: folderExplorer(pubKey, pageEntry.parentChain, n),
-      publicationRootUrl: pubRoot(pubKey), publicationBuildingBlocksUrl: pubBB(pubKey), note: null
+      buildingBlocksUrl: facilityBB(pubKey, bbc),
+      rootPageLevelUrl: facilityRoot(pubKey, pc),
+      note
     };
   }
   function resolveDiningUrl(rawUrl, entries){
@@ -110,10 +144,15 @@
     const displayName = entry ? (entry.displayName || titleCase(norm.slug)) : titleCase(norm.slug);
     const warnings = [];
     if(!entry) warnings.push('Slug not found in dining index — showing title from URL only. Rebuild data/dining-slug-index.json from crawl.');
+    const locales = LOCALES.map((locale) => ({ locale, url: localeLatest(norm.prodUrl, locale) }));
     return {
       ok: true, slug: norm.slug, parkSegment: norm.parkSegment, lookupKey: norm.lookupKey, displayName,
-      prodUrl: norm.prodUrl, stageUrl: stageFromProd(norm.prodUrl), stageUrlEnCa: stageFromProd(norm.prodUrl, 'en_CA'),
-      evo: treePayload('evo065', entry && entry.evo), lgcy: treePayload('lgcy065', entry && entry.lgcy), warnings
+      prodUrl: norm.prodUrl, stageUrl: stageFromProd(norm.prodUrl), latestUrl: latestFromProd(norm.prodUrl),
+      locales,
+      evo040: categoryPayload('evo040', slotForPub(entry, 'evo040')),
+      evo065: categoryPayload('evo065', slotForPub(entry, 'evo065')),
+      lgcy065: categoryPayload('lgcy065', slotForPub(entry, 'lgcy065')),
+      warnings
     };
   }
   globalThis.ValidateResolverInline = { links, resolveDiningUrl };
@@ -124,6 +163,12 @@
   'use strict';
 
   let lastResult = null;
+
+  const PUB_LABELS = {
+    evo040: 'EVO040 WDW (en) Content',
+    evo065: 'EVO065 WDW Parent (All) Publish',
+    lgcy065: 'LGCY065 Parent (All) Publish'
+  };
 
   function escapeHtml(s){
     const d = document.createElement('div');
@@ -142,17 +187,21 @@
   function pubBlock(title, tree){
     if(!tree) return '';
     let html = '<div class="validate-pub-block"><div class="validate-pub-title">' + escapeHtml(title) + '</div>';
-    html += linkRow('Root', tree.publicationRootUrl, 'Open Root in D-Scribe');
-    html += linkRow('Building Blocks', tree.publicationBuildingBlocksUrl, 'Open Building Blocks');
-    if(tree.explorerFolderUrl){
-      html += linkRow('Facility folder', tree.explorerFolderUrl, 'Explorer (page selected)');
-    }
-    if(tree.editorPageUrl){
-      html += linkRow('Edit page', tree.editorPageUrl, tree.pageTcm || 'Open page editor');
-    }
-    if(tree.note && !tree.explorerFolderUrl){
+    html += linkRow('Building Blocks', tree.buildingBlocksUrl, 'Open Building Blocks');
+    html += linkRow('Root/Page Level', tree.rootPageLevelUrl, 'Open Root / page level');
+    if(tree.note){
       html += '<p class="validate-note">' + escapeHtml(tree.note) + '</p>';
     }
+    html += '</div>';
+    return html;
+  }
+
+  function localesBlock(locales){
+    if(!locales || !locales.length) return '';
+    let html = '<div class="validate-locales-block"><div class="validate-pub-title">Locales (latest)</div>';
+    locales.forEach((row) => {
+      html += linkRow(row.locale, row.url, row.url);
+    });
     html += '</div>';
     return html;
   }
@@ -173,9 +222,11 @@
     }
     html += linkRow('Production', data.prodUrl, data.prodUrl);
     html += linkRow('Stage', data.stageUrl, data.stageUrl);
-    html += linkRow('Stage (en_CA)', data.stageUrlEnCa, data.stageUrlEnCa);
-    html += pubBlock('EVO065 WDW Parent (All) Publish', data.evo);
-    html += pubBlock('LGCY065 Parent (All) Publish', data.lgcy);
+    html += linkRow('Latest', data.latestUrl, data.latestUrl);
+    html += pubBlock(PUB_LABELS.evo040, data.evo040);
+    html += pubBlock(PUB_LABELS.evo065, data.evo065);
+    html += pubBlock(PUB_LABELS.lgcy065, data.lgcy065);
+    html += localesBlock(data.locales);
     html += '<div class="validate-actions">' +
       '<button type="button" class="config-save-btn" id="validateCopyBtn">Copy all links</button>' +
       '</div></section>';
@@ -189,17 +240,21 @@
       data.displayName,
       'Prod: ' + data.prodUrl,
       'Stage: ' + data.stageUrl,
-      'Stage en_CA: ' + data.stageUrlEnCa
+      'Latest: ' + data.latestUrl
     ];
-    ['evo', 'lgcy'].forEach((k) => {
+    ['evo040', 'evo065', 'lgcy065'].forEach((k) => {
       const t = data[k];
       if(!t) return;
-      lines.push('', t === data.evo ? 'EVO065' : 'LGCY065');
-      if(t.publicationRootUrl) lines.push('Root: ' + t.publicationRootUrl);
-      if(t.publicationBuildingBlocksUrl) lines.push('Building Blocks: ' + t.publicationBuildingBlocksUrl);
-      if(t.explorerFolderUrl) lines.push('Folder: ' + t.explorerFolderUrl);
-      if(t.editorPageUrl) lines.push('Editor: ' + t.editorPageUrl);
+      lines.push('', PUB_LABELS[k] || k);
+      if(t.buildingBlocksUrl) lines.push('Building Blocks: ' + t.buildingBlocksUrl);
+      if(t.rootPageLevelUrl) lines.push('Root/Page Level: ' + t.rootPageLevelUrl);
     });
+    if(data.locales && data.locales.length){
+      lines.push('', 'Locales (latest)');
+      data.locales.forEach((row) => {
+        lines.push(row.locale + ': ' + row.url);
+      });
+    }
     return lines.join('\n');
   }
 

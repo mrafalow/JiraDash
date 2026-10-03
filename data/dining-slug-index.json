@@ -1,28 +1,32 @@
 {
-  "version": 1,
+  "version": 2,
   "entries": {
     "magic-kingdom/columbia-harbour-house": {
       "slug": "columbia-harbour-house",
       "parkSegment": "magic-kingdom",
       "displayName": "Columbia Harbour House",
-      "evo": {
+      "evo040": null,
+      "evo065": {
         "pageTcm": "tcm:283-287148-64",
         "itemNumber": 287148,
         "pageTitle": "columbia-harbour-house",
-        "parentChain": []
+        "bbParentChain": [],
+        "pageParentChain": []
       },
-      "lgcy": null
+      "lgcy065": null
     },
     "boardwalk/leaping-horse-libations": {
       "slug": "leaping-horse-libations",
       "parkSegment": "boardwalk",
       "displayName": "Leaping Horse Libations",
-      "evo": null,
-      "lgcy": {
+      "evo040": null,
+      "evo065": null,
+      "lgcy065": {
         "pageTcm": "tcm:627-1018516-64",
         "itemNumber": 1018516,
         "pageTitle": "Leaping Horse Libations",
-        "parentChain": [
+        "bbParentChain": [],
+        "pageParentChain": [
           "tcm:627-216346-4",
           "tcm:627-293232-4",
           "tcm:627-293235-4",
@@ -31,6 +35,32 @@
           "tcm:627-295199-4",
           "tcm:627-295209-4"
         ]
+      }
+    },
+    "all-star-sports-resort/grandstand-spirits-pool-bar": {
+      "slug": "grandstand-spirits-pool-bar",
+      "parkSegment": "all-star-sports-resort",
+      "displayName": "Grandstand Spirits Pool Bar",
+      "evo040": {
+        "pageTcm": null,
+        "itemNumber": null,
+        "pageTitle": null,
+        "bbParentChain": [],
+        "pageParentChain": []
+      },
+      "evo065": {
+        "pageTcm": null,
+        "itemNumber": null,
+        "pageTitle": "grandstand-spirits-pool-bar",
+        "bbParentChain": [],
+        "pageParentChain": []
+      },
+      "lgcy065": {
+        "pageTcm": null,
+        "itemNumber": null,
+        "pageTitle": null,
+        "bbParentChain": [],
+        "pageParentChain": []
       }
     }
   }
