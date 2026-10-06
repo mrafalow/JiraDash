@@ -23,6 +23,8 @@ const { URL } = require('url');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const PORT = Number(process.env.PORT || 3847);
+/** In Docker / Launch set BIND_HOST=0.0.0.0 (default 127.0.0.1 for local dev). */
+const BIND_HOST = (process.env.BIND_HOST || '127.0.0.1').trim() || '127.0.0.1';
 const ROOT = __dirname;
 
 const MIME = {
@@ -487,9 +489,12 @@ const server = http.createServer((req, res) => {
   serveStatic(req, res, pathname);
 });
 
-server.listen(PORT, '127.0.0.1', () => {
+server.listen(PORT, BIND_HOST, () => {
   const cfg0 = getJiraConfig();
   console.log('Studio Titan local server');
+  if(BIND_HOST === '0.0.0.0'){
+    console.log('  Listen:    0.0.0.0:' + PORT);
+  }
   console.log('  Dashboard: http://127.0.0.1:' + PORT + '/');
   console.log('  Health:    http://127.0.0.1:' + PORT + '/api/health');
   let diningOk = false;

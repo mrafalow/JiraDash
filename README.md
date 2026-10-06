@@ -26,6 +26,10 @@ npm start
 
 3. Open [http://127.0.0.1:3847/](http://127.0.0.1:3847/)
 
+## Studioshare Launch (optional hosted copy)
+
+To run on Disney **Studioshare Launch** (GitLab deploy, separate from GitHub), see **[docs/STUDIOSHARE-LAUNCH.md](docs/STUDIOSHARE-LAUNCH.md)**. The repo includes `Dockerfile` and `.launch/compose.yaml` for the Node server on port 8080.
+
 ## Validate view (ticket work)
 
 Sidebar **Validate**: paste a WDW prod dining URL (`disneyworld.disney.go.com/dining/…`) to get:
