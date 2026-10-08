@@ -41,6 +41,12 @@
       </div>
       <span class="label">On the Horizon</span>
     </div>
+    <div class="nav-item" data-view="validate">
+      <div class="icon">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+      </div>
+      <span class="label">Validate</span>
+    </div>
     <div class="nav-item disabled" data-view="launches" id="navLaunches" aria-disabled="true">
       <div class="icon">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 19L19 5M10 5h9v9"/><path d="M5 12v7h7"/></svg>
@@ -103,6 +109,48 @@
         <div class="section-title">IN FOCUS &mdash; BY LANE (SCORE WITHIN EACH)</div>
         <div id="ticketList"><div class="loading-wrap"><div class="spinner"></div><span id="loadingStatusText">Fetching your board from Jira&hellip;</span></div></div>
       </section>
+    </div>
+
+    <div id="viewValidate" style="display:none;">
+      <section class="panel-block">
+        <div class="section-title">TICKET WORK &mdash; PASTE PROD URL</div>
+        <p class="validate-hint">Paste a WDW dining production URL for Production / Stage / Latest, D-Scribe explorers (<strong>EVO040</strong> Building Blocks; <strong>EVO065</strong> Building Blocks + Root/Page; <strong>LGCY065</strong> Root/Page only), an offline <code>mdx://finder/detail</code> deep link (from <code>data/mdx-facility-by-slug.json</code>), and locale links. Facility-deep CMS paths use your local crawl (<code>DSCRIBE_DATA</code>) and/or a D-Scribe session cookie when needed.</p>
+        <div class="validate-dscribe-session" id="validateDscribeSession">
+          <div class="validate-dscribe-head">
+            <span class="validate-dscribe-title">D-Scribe session</span>
+            <span class="validate-dscribe-status" id="validateDscribeStatus">Checking&hellip;</span>
+          </div>
+          <textarea id="validateDscribeCookie" class="validate-dscribe-cookie" rows="2" spellcheck="false" autocomplete="off" placeholder="Paste full Cookie header (UserSessionID + AWSALB + AWSALBCORS). Saved in server memory until restart — or set DSCRIBE_COOKIE in .env."></textarea>
+          <div class="validate-dscribe-actions">
+            <button type="button" class="config-save-btn" id="validateDscribeSaveBtn">Save session</button>
+            <button type="button" class="config-reset-btn" id="validateDscribeClearBtn">Clear</button>
+          </div>
+          <p class="validate-dscribe-note" id="validateDscribeNote"></p>
+        </div>
+        <div class="validate-input-row">
+          <input type="url" id="validateUrlInput" class="validate-url-input" placeholder="https://disneyworld.disney.go.com/dining/…" spellcheck="false" autocomplete="off">
+          <button type="button" class="refresh-btn" id="validateResolveBtn">Resolve</button>
+        </div>
+      </section>
+      <div id="validateResults"></div>
+      <div id="validateGraphModal" class="validate-graph-modal" hidden aria-hidden="true">
+        <div class="validate-graph-backdrop" id="validateGraphBackdrop"></div>
+        <div class="validate-graph-panel" role="dialog" aria-labelledby="validateGraphTitle">
+          <header class="validate-graph-header">
+            <div>
+              <div class="validate-graph-kicker">Offline content map</div>
+              <h2 class="validate-graph-title" id="validateGraphTitle">Facility</h2>
+              <p class="validate-graph-sub" id="validateGraphSub"></p>
+            </div>
+            <div class="validate-graph-header-actions">
+              <button type="button" class="validate-map-live-btn" id="validateGraphLiveBtn" disabled title="Coming soon — save a D-Scribe session cookie for live page links.">Live links</button>
+              <button type="button" class="validate-graph-close" id="validateGraphClose" aria-label="Close">×</button>
+            </div>
+          </header>
+          <div id="validateGraphCy" class="validate-graph-cy"></div>
+          <p class="validate-graph-legend" id="validateGraphLegend"></p>
+        </div>
+      </div>
     </div>
 
     <div id="viewHorizon" style="display:none;">
@@ -189,6 +237,10 @@
             <div><div class="config-label">Translations window</div><div class="config-sub">Business days allowed after actual publish</div></div>
             <input type="number" min="1" class="config-input" id="cfg_TRANSLATIONS_WINDOW">
           </div>
+          <div class="config-row">
+            <div><div class="config-label">Publishing light — days ahead</div><div class="config-sub">Business days before due (same as Due “In Nd” on cards). 0 = due date only; use 2–4 for sensitive launches</div></div>
+            <input type="number" min="0" max="14" class="config-input" id="cfg_PUBLISH_ALERT_DAYS">
+          </div>
           <div class="config-actions">
             <button class="config-save-btn" id="configSaveBtn">Save</button>
             <button class="config-reset-btn" id="configResetBtn">Reset to defaults</button>
@@ -215,6 +267,7 @@
 
 <script src="prioritize.js"></script>
 <script src="jira.js"></script>
+<script src="validate.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

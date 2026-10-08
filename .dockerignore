@@ -1,0 +1,12 @@
+.env
+.env.*
+node_modules
+.git
+.github
+.cursor
+.npm
+*.log
+.DS_Store
+reports/
+Start JiraDash.command
+data/component-role-by-id.json

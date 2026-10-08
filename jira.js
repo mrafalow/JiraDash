@@ -231,14 +231,48 @@ function mapActiveTicket(issue, subtasksByParent, currentAccountId, fieldIds, co
 
 function mapClosedTicket(issue, subtasksByParent, currentAccountId){
   const f = issue.fields || {};
+  const assignee = mapAssignee(f, currentAccountId);
   return {
     key: issue.key,
     summary: f.summary || '',
     priority: mapPriority(f),
     dueDate: datePrefix(f.duedate),
     closedDate: datePrefix(f.resolutiondate),
+    assigneeName: assignee.assigneeName,
     subtasks: (subtasksByParent[issue.key] || []).slice()
   };
+}
+
+const RECENTLY_CLOSED_LIMIT = 20;
+const RECENTLY_CLOSED_PER_PROJECT = 15;
+
+/** WDW + CONTENT closed parents, merged by resolution date (newest first). */
+async function fetchRecentlyClosedIssues(parentFields){
+  const wdwJql =
+    'project = WDW AND (assignee = currentUser() OR reporter = currentUser()) AND issuetype != Sub-task AND status = Closed ORDER BY resolutiondate DESC';
+  const contentJql =
+    'project = CONTENT AND (reporter = currentUser() OR assignee = currentUser()) AND issuetype != Sub-task AND statusCategory = Done ORDER BY resolutiondate DESC';
+
+  const [wdwIssues, contentIssues] = await Promise.all([
+    jiraSearch(wdwJql, parentFields, RECENTLY_CLOSED_PER_PROJECT),
+    jiraSearch(contentJql, parentFields, RECENTLY_CLOSED_PER_PROJECT).catch((err) => {
+      console.warn('[jira] Recently closed CONTENT fetch failed:', err.message || err);
+      return [];
+    })
+  ]);
+
+  const byKey = new Map();
+  wdwIssues.concat(contentIssues).forEach((issue) => {
+    if(issue && issue.key && !byKey.has(issue.key)) byKey.set(issue.key, issue);
+  });
+
+  return [...byKey.values()]
+    .sort((a, b) => {
+      const da = (a.fields && a.fields.resolutiondate) || '';
+      const db = (b.fields && b.fields.resolutiondate) || '';
+      return String(db).localeCompare(String(da));
+    })
+    .slice(0, RECENTLY_CLOSED_LIMIT);
 }
 
 /** CONTENT- delivery remotes — flat row for footer section (not scored into Solo lanes). */
@@ -744,11 +778,7 @@ async function fetchJiraData(){
     if(dn) currentUserFirstName = String(dn).split(/\s+/)[0];
   }
 
-  const closedIssues = await jiraSearch(
-    'project = WDW AND (assignee = currentUser() OR reporter = currentUser()) AND issuetype != Sub-task AND status = Closed ORDER BY resolutiondate DESC',
-    parentFields,
-    15
-  );
+  const closedIssues = await fetchRecentlyClosedIssues(parentFields);
 
   const activeKeys = activeIssues.map(i => i.key);
   const closedKeys = closedIssues.map(i => i.key);

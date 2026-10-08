@@ -26,6 +26,54 @@ npm start
 
 3. Open [http://127.0.0.1:3847/](http://127.0.0.1:3847/)
 
+## Studioshare Launch (optional hosted copy)
+
+To run on Disney **Studioshare Launch** (GitLab deploy, separate from GitHub), see **[docs/STUDIOSHARE-LAUNCH.md](docs/STUDIOSHARE-LAUNCH.md)**. The repo includes `Dockerfile` and `.launch/compose.yaml` for the Node server on port 8080.
+
+## Validate view (ticket work)
+
+Sidebar **Validate**: paste a WDW prod dining URL (`disneyworld.disney.go.com/dining/…`) to get:
+
+1. Display name
+2. **Site:** Production, Stage (`stage.` host), Latest (`latest.` host)
+3. **D-Scribe:** **EVO040** Building Blocks only; **EVO065** Building Blocks + Root/Page Level; **LGCY065** Root/Page Level only (no BB). Each publication is a labeled chip in the UI (facility-deep when indexed; otherwise publication-level folders + a note).
+4. **MDX app** deep link: `mdx://finder/detail?facilityId=…;entityType=…` (offline from `data/mdx-facility-by-slug.json`; rebuild with `node scripts/mdx/build-mdx-slug-index.js` when `DSCRIBE_DATA` points at dining-content-ops data)
+5. **Locales** on the latest host (path mid-segment, casing preserved): `es-us`, `en_CA`, `fr-ca`, `es-ar`, `es-mx`, `es-pe`, `es-co`, `es-cl`, `pt-br`
+
+Resolve is offline (local slug index + URL builders). No live Tridion call. Explorer links open in your browser (VPN/session as usual).
+
+Optional env for a full slug index (recommended on your Mac):
+
+```env
+DSCRIBE_DATA=/path/to/disney-dining-content-ops-full/data
+```
+
+Rebuild the index from the DScribe crawl (indexes BB `-2` and page `-4` folder chains for pubs **281**, **283→934**, **627→914**):
+
+```bash
+python3 scripts/dscribe/build-dining-slug-index.py
+```
+
+Writes [`data/dining-slug-index.json`](data/dining-slug-index.json) (schema **v2**: per pub slot `bbParentChain` + `pageParentChain`). The repo seed includes a few facilities (including Grandstand Spirits shape); empty chains fall back to pub-level explorers until you rebuild from crawl locally.
+
+API (same logic as the UI): `GET /api/dining/resolve?url=…` · offline CMS tree: `GET /api/dining/graph?url=…`
+
+**Content map** lists only D-Scribe-openable components/pages (no folder chains). Sort order uses overlay roles when present — build a local role index once (requires `DSCRIBE_DATA` and `crawl_overlay.json`):
+
+```bash
+node scripts/dscribe/build-component-role-index.js
+```
+
+Writes `data/component-role-by-id.json` (~7MB, gitignored).
+
+If the server was started before Validate landed, the UI falls back to the browser: inlined resolver in `validate.js` (kept in sync with `scripts/dscribe/*`) + `data/dining-slug-index.json`. Restart `npm start` and confirm the console line `Validate: /api/dining/resolve ready`.
+
+| Publication | Publish / content pub | Crawl source | Root folder | Building Blocks |
+|-------------|----------------------|--------------|-------------|-----------------|
+| EVO040 WDW (en) Content | **281** | **281** (no remap) | `tcm:281-3-4` | `tcm:281-1-2` |
+| EVO065 WDW Parent (All) Publish | **934** | **283** | `tcm:934-3-4` | `tcm:934-1-2` |
+| LGCY065 Parent (All) Publish | **914** | **627** | `tcm:914-3-4` | `tcm:914-1-2` |
+
 ## First Jira test
 
 ```bash
@@ -43,4 +91,7 @@ Expect `OK: authenticated as …`. If it fails with 401/403, update `JIRA_API_TO
 | `jira.js` | Jira fetch via local proxy |
 | `prioritize.js` | Ranking / next-action logic |
 | `app.js` | UI wiring |
-| `server.js` | Static files + Basic Auth Jira proxy |
+| `server.js` | Static files + Jira proxy + `/api/dining/resolve` |
+| `validate.js` | Validate view UI |
+| `scripts/dscribe/` | D-Scribe link builders, dining resolve, index builder |
+| `data/dining-slug-index.json` | Slug → EVO040/EVO065/LGCY065 BB + page folder chains (rebuild from crawl) |
