@@ -38,20 +38,27 @@ async function fetchJson(path, cookie) {
   }
 }
 
+function itemsFromSearchPayload(data) {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  return (
+    data.items ||
+    data.Items ||
+    data.results ||
+    data.hits ||
+    (data.result && data.result.items) ||
+    []
+  );
+}
+
 async function searchItems(cookie, slug) {
-  const queries = [
-    'Title:' + slug,
-    slug
-  ];
+  const titleGuess = slug.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  const queries = [slug, 'Title:' + slug, titleGuess];
   const out = [];
   const seen = new Set();
-  for (const q of queries) {
-    const path =
-      '/ui/api/v3.0/search?searchQuery=' +
-      encodeURIComponent(q) +
-      '&maxResults=200';
-    const data = await fetchJson(path, cookie);
-    const items = (data && (data.items || data.Items || data.results)) || [];
+
+  function collect(data) {
+    const items = itemsFromSearchPayload(data);
     for (const it of items) {
       const id = it.id || it.Id || it.uri;
       if (id && !seen.has(id)) {
@@ -59,6 +66,21 @@ async function searchItems(cookie, slug) {
         out.push(it);
       }
     }
+  }
+
+  for (const q of queries) {
+    const systemPath =
+      '/ui/api/v3.0/system/search?fullTextQuery=' +
+      encodeURIComponent(q) +
+      '&resultLimit=50';
+    collect(await fetchJson(systemPath, cookie));
+    if (out.length) break;
+
+    const legacyPath =
+      '/ui/api/v3.0/search?searchQuery=' +
+      encodeURIComponent(q) +
+      '&maxResults=200';
+    collect(await fetchJson(legacyPath, cookie));
     if (out.length) break;
   }
   return out;
@@ -69,9 +91,15 @@ function pubFromTcm(tcmId) {
   return String(tcmId).split(':')[1].split('-')[0];
 }
 
-function slugFromItem(it) {
+function slugFromItem(it, targetSlug) {
   const title = (it.title || it.Title || '').trim();
   if (/^[a-z0-9]+(-[a-z0-9]+)*$/i.test(title)) return title.toLowerCase();
+  const normalized = title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-');
+  if (targetSlug && normalized === targetSlug) return targetSlug;
   return null;
 }
 
@@ -139,7 +167,7 @@ async function lookupSlugEntryLive(slug, lookupKey) {
     const pub = pubFromTcm(id);
     const tree = PUB_SLOTS[pub];
     if (!tree) continue;
-    const itemSlug = slugFromItem(it);
+    const itemSlug = slugFromItem(it, slug);
     if (itemSlug !== slug) continue;
 
     if (!entry[tree]) entry[tree] = emptySlot();

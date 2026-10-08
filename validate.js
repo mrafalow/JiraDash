@@ -46,6 +46,15 @@
   }
   function facilityBB(k, chain){ return facilityExplorer(k, 'bb', chain); }
   function facilityRoot(k, chain){ return facilityExplorer(k, 'root', chain); }
+  function pageFolderExplorer(pubKey, chain, itemNumber){
+    const id = PUBLISH_PUBS[pubKey].id;
+    if(!itemNumber) return null;
+    const c = ['tcm:' + id + '-' + ROOT];
+    (chain || []).forEach((t) => c.push(remapTcm(t, id)));
+    const item = 'tcm:' + id + '-' + itemNumber + '-64';
+    const container = ['cme:publications_tcm:0-' + id + '-1'].concat(c).join('_');
+    return DSCRIBE_BASE + '/ui/explorer?container=' + container + '&item=' + encodeURIComponent(item) + '&panel=information';
+  }
   function titleCase(slug){
     return String(slug || '').split('-').filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   }
@@ -145,6 +154,33 @@
     ['evo040','evo065','lgcy065'].forEach((k) => { out[k] = mergeSlots(out[k], b[k], rep); });
     return out;
   }
+  function indexKeyMatchesSlug(indexKey, entry, slug){
+    if(!slug) return false;
+    const e = entry || {};
+    return e.slug === slug || indexKey === slug || indexKey.endsWith('/' + slug);
+  }
+  function entryChainScore(entry){
+    if(!entry) return 0;
+    let score = 0;
+    ['evo040','evo065','lgcy065'].forEach((pubKey) => {
+      const slot = slotForPub(entry, pubKey);
+      if(!slot) return;
+      score += bbChain(slot).length + pageChain(slot).length;
+      if(slot.pageTcm) score += 2;
+    });
+    return score;
+  }
+  function mergeSlugFallback(entries, lookupKey, slug, existing){
+    if(!slug || !entries) return existing;
+    let fallback = existing ? Object.assign({}, existing) : null;
+    for(const k of Object.keys(entries)){
+      const e = entries[k];
+      if(!e || k === lookupKey) continue;
+      if(!indexKeyMatchesSlug(k, e, slug)) continue;
+      fallback = fallback ? mergeIndexEntry(fallback, e, true) : Object.assign({}, e);
+    }
+    return fallback;
+  }
   function lookupEntry(entries, lookupKey, slug){
     if(!entries) return null;
     const park = urlPark(lookupKey);
@@ -152,7 +188,7 @@
     for(const k of Object.keys(entries)){
       const e = entries[k];
       if(!e) continue;
-      const sameSlug = e.slug === slug || k.endsWith('/' + slug) || k === slug;
+      const sameSlug = indexKeyMatchesSlug(k, e, slug);
       if(!sameSlug || k === lookupKey) continue;
       const samePark = park && entryPark(k, e) === park;
       if(!merged){
@@ -162,13 +198,81 @@
       merged = mergeIndexEntry(merged, e, samePark);
     }
     if(!merged && entries[slug]) merged = Object.assign({}, entries[slug]);
+    const fallback = mergeSlugFallback(entries, lookupKey, slug, merged);
+    const before = entryChainScore(merged);
+    const after = entryChainScore(fallback);
+    if(fallback && (!merged || after > before)) merged = fallback;
     return merged;
   }
-  function slotForPub(entry, pubKey){
+  function rawSlotForPub(entry, pubKey){
     if(!entry) return null;
     if(pubKey === 'evo040') return entry.evo040 || null;
     if(pubKey === 'evo065') return entry.evo065 || entry.evo || null;
     if(pubKey === 'lgcy065') return entry.lgcy065 || entry.lgcy || null;
+    return null;
+  }
+  function sourcePubFromChain(chain){
+    if(!chain || !chain.length) return '';
+    return (String(chain[0]).split(':')[1] || '').split('-')[0] || '';
+  }
+  function slotQualityScore(slot, pubKey){
+    if(!slot) return -1;
+    const bbc = bbChain(slot);
+    const pc = pageChain(slot);
+    let score = pc.length * 20 + bbc.length;
+    if(pubKey === 'evo040' || pubKey === 'evo065'){
+      const bbPub = sourcePubFromChain(bbc);
+      if(bbPub === '472') score += 500;
+      else if(bbPub === '501') score -= 200;
+    }
+    if(slot.itemNumber) score += 5;
+    return score;
+  }
+  function bestSlotForPubFromSlugRows(entries, slug, pubKey){
+    if(!entries || !slug) return null;
+    let best = null;
+    let bestScore = -1;
+    for(const k of Object.keys(entries)){
+      const row = entries[k];
+      if(!row || !indexKeyMatchesSlug(k, row, slug)) continue;
+      const slot = rawSlotForPub(row, pubKey);
+      const score = slotQualityScore(slot, pubKey);
+      if(score > bestScore){ bestScore = score; best = slot; }
+    }
+    return best;
+  }
+  function enrichEntryFromSlugScan(entry, ctx){
+    if(!entry || !ctx || !ctx.entries || !ctx.slug) return entry;
+    const out = Object.assign({}, entry);
+    ['evo040','evo065'].forEach((pubKey) => {
+      const best = bestSlotForPubFromSlugRows(ctx.entries, ctx.slug, pubKey);
+      if(!best) return;
+      if(slotQualityScore(best, pubKey) > slotQualityScore(out[pubKey], pubKey)){
+        out[pubKey] = Object.assign({}, best);
+      }
+    });
+    const supplements = ctx.chainSupplementsBySlug && ctx.chainSupplementsBySlug[ctx.slug];
+    if(supplements){
+      ['evo040','evo065','lgcy065'].forEach((pubKey) => {
+        const patch = supplements[pubKey];
+        if(patch) out[pubKey] = mergeSlots(out[pubKey], patch, true);
+      });
+    }
+    return out;
+  }
+  function slotForPub(entry, pubKey, ctx){
+    if(!entry) return null;
+    if(pubKey === 'evo040') return entry.evo040 || null;
+    if(pubKey === 'evo065') return entry.evo065 || entry.evo || null;
+    if(pubKey === 'lgcy065'){
+      let slot = rawSlotForPub(entry, 'lgcy065');
+      const supplement = ctx && ctx.lgcySlotsBySlug && ctx.slug ? ctx.lgcySlotsBySlug[ctx.slug] : null;
+      if(supplement && supplement.pageParentChain && supplement.pageParentChain.length){
+        const merged = Object.assign({}, supplement, { lgcyFromPageItem: true });
+        slot = slot ? mergeSlots(slot, merged, true) : merged;
+      }
+      return slot;
+    }
     return null;
   }
   function pageChain(slot){
@@ -187,6 +291,8 @@
     let note = null;
     if(!slot){
       note = 'No facility folders in index for this slug — opening publication-level folders. Rebuild data/dining-slug-index.json from crawl.';
+    } else if(slot.lgcyFromPageItem && pubKey === 'lgcy065'){
+      note = 'LGCY065 page folder from pub 627 supplement (CMS page title may differ from URL slug).';
     } else if(!bbc.length && !pc.length){
       note = 'Index has no BB/page folder chains — opening publication-level folders. Rebuild with DSCRIBE_DATA crawl.';
     } else if(!bbc.length){
@@ -194,27 +300,43 @@
     } else if(!pc.length){
       note = 'No Root/page folder chain in index — Root link opens publication Root.';
     }
+    let rootPageLevelUrl = facilityRoot(pubKey, pc);
+    if(slot && slot.itemNumber && pc.length){
+      const withItem = pageFolderExplorer(pubKey, pc, slot.itemNumber);
+      if(withItem) rootPageLevelUrl = withItem;
+    }
     return {
       buildingBlocksUrl: facilityBB(pubKey, bbc),
-      rootPageLevelUrl: facilityRoot(pubKey, pc),
+      rootPageLevelUrl,
       note
     };
   }
-  function resolveDiningUrl(rawUrl, entries){
+  function resolveDiningUrl(rawUrl, entries, lgcySlotsBySlug, chainSupplementsBySlug){
     const norm = normalizeProdUrl(rawUrl);
     if(norm.error) return { ok: false, error: norm.error };
-    const entry = lookupEntry(entries, norm.lookupKey, norm.slug);
+    const merged = lookupEntry(entries, norm.lookupKey, norm.slug);
+    const slotCtx = {
+      entries,
+      slug: norm.slug,
+      lgcySlotsBySlug: lgcySlotsBySlug || null,
+      chainSupplementsBySlug: chainSupplementsBySlug || null
+    };
+    const entry = merged ? enrichEntryFromSlugScan(merged, slotCtx) : merged;
     const displayName = entry ? (entry.displayName || titleCase(norm.slug)) : titleCase(norm.slug);
     const warnings = [];
-    if(!entry) warnings.push('Slug not found in dining index — showing title from URL only. Rebuild data/dining-slug-index.json from crawl.');
+    if(!entry){
+      warnings.push('Slug not found in dining index — showing title from URL only. Rebuild data/dining-slug-index.json from crawl.');
+    } else if(norm.lookupKey && !entries[norm.lookupKey] && norm.parkSegment){
+      warnings.push('No index row for this URL path — using CMS folder data from the same facility slug under a different path prefix.');
+    }
     const locales = LOCALES.map((locale) => ({ locale, url: localeLatest(norm.prodUrl, locale) }));
     return {
       ok: true, slug: norm.slug, parkSegment: norm.parkSegment, lookupKey: norm.lookupKey, displayName,
       prodUrl: norm.prodUrl, stageUrl: stageFromProd(norm.prodUrl), latestUrl: latestFromProd(norm.prodUrl),
       locales,
-      evo040: categoryPayload('evo040', slotForPub(entry, 'evo040')),
-      evo065: categoryPayload('evo065', slotForPub(entry, 'evo065')),
-      lgcy065: categoryPayload('lgcy065', slotForPub(entry, 'lgcy065')),
+      evo040: categoryPayload('evo040', slotForPub(entry, 'evo040', slotCtx)),
+      evo065: categoryPayload('evo065', slotForPub(entry, 'evo065', slotCtx)),
+      lgcy065: categoryPayload('lgcy065', slotForPub(entry, 'lgcy065', slotCtx)),
       warnings
     };
   }
@@ -226,12 +348,6 @@
   'use strict';
 
   let lastResult = null;
-
-  const PUB_LABELS = {
-    evo040: 'EVO040 WDW (en) Content',
-    evo065: 'EVO065 WDW Parent (All) Publish',
-    lgcy065: 'LGCY065 Parent (All) Publish'
-  };
 
   function escapeHtml(s){
     const d = document.createElement('div');
@@ -282,21 +398,51 @@
     });
   }
 
-  /** Which D-Scribe rows Validate exposes (v1). */
-  const VALIDATE_DSCRIBE_LINKS = {
-    evo040: { bb: true, root: false },
-    evo065: { bb: true, root: true }
+  /** D-Scribe publication blocks in Validate (chip + which link rows to show). */
+  const VALIDATE_PUB_META = {
+    evo040: {
+      title: 'EVO040 WDW (en) Content',
+      chip: 'EVO040',
+      hint: 'Building Blocks only',
+      bb: true,
+      root: false,
+      tone: 'evo040'
+    },
+    evo065: {
+      title: 'EVO065 WDW Parent (All) Publish',
+      chip: 'EVO065',
+      hint: 'Building Blocks + Root / Page',
+      bb: true,
+      root: true,
+      tone: 'evo065'
+    },
+    lgcy065: {
+      title: 'LGCY065 Parent (All) Publish',
+      chip: 'LGCY065',
+      hint: 'Root / Page only (no Building Blocks)',
+      bb: false,
+      root: true,
+      tone: 'lgcy065'
+    }
   };
 
-  function pubBlock(title, tree, opts){
-    if(!tree) return '';
-    opts = Object.assign({ bb: true, root: true }, opts || {});
-    let html = '<div class="validate-pub-block"><div class="validate-pub-title">' + escapeHtml(title) + '</div>';
-    if(opts.bb) html += linkRow('Building Blocks', tree.buildingBlocksUrl, 'Open Building Blocks');
-    if(opts.root) html += linkRow('Root/Page Level', tree.rootPageLevelUrl, 'Open Root / page level');
+  const VALIDATE_PUB_ORDER = ['evo040', 'evo065', 'lgcy065'];
+
+  function pubBlock(pubKey, tree){
+    const meta = VALIDATE_PUB_META[pubKey];
+    if(!tree || !meta) return '';
+    let html = '<div class="validate-pub-block validate-pub-block--' + meta.tone + '">';
+    html += '<div class="validate-pub-head">' +
+      '<span class="validate-pub-chip validate-pub-chip--' + meta.tone + '">' + escapeHtml(meta.chip) + '</span>' +
+      '<div class="validate-pub-head-text">' +
+      '<div class="validate-pub-title">' + escapeHtml(meta.title) + '</div>' +
+      '<div class="validate-pub-hint">' + escapeHtml(meta.hint) + '</div>' +
+      '</div></div>';
+    if(meta.bb) html += linkRow('Building Blocks', tree.buildingBlocksUrl, 'Open Building Blocks');
+    if(meta.root) html += linkRow('Root/Page Level', tree.rootPageLevelUrl, 'Open Root / page level');
     let note = tree.note;
-    if(note && !opts.root && /root\/page/i.test(note)) note = null;
-    if(note && !opts.bb && /building blocks/i.test(note)) note = null;
+    if(note && !meta.root && /root\/page/i.test(note)) note = null;
+    if(note && !meta.bb && /building blocks/i.test(note)) note = null;
     if(note){
       html += '<p class="validate-note">' + escapeHtml(note) + '</p>';
     }
@@ -361,8 +507,12 @@
     html += linkRow('Production', data.prodUrl, data.prodUrl);
     html += linkRow('Stage', data.stageUrl, data.stageUrl);
     html += linkRow('Latest', data.latestUrl, data.latestUrl);
-    html += pubBlock(PUB_LABELS.evo040, data.evo040, VALIDATE_DSCRIBE_LINKS.evo040);
-    html += pubBlock(PUB_LABELS.evo065, data.evo065, VALIDATE_DSCRIBE_LINKS.evo065);
+    html += '<div class="validate-dscribe-sections">';
+    html += '<div class="validate-dscribe-sections-label">D-Scribe publications</div>';
+    VALIDATE_PUB_ORDER.forEach((k) => {
+      html += pubBlock(k, data[k]);
+    });
+    html += '</div>';
     html += mdxBlock(data.mdx);
     html += localesBlock(data.locales);
     html += '<div class="validate-actions">' +
@@ -389,13 +539,13 @@
       'Stage: ' + data.stageUrl,
       'Latest: ' + data.latestUrl
     ];
-    Object.keys(VALIDATE_DSCRIBE_LINKS).forEach((k) => {
+    VALIDATE_PUB_ORDER.forEach((k) => {
       const t = data[k];
-      const opts = VALIDATE_DSCRIBE_LINKS[k];
-      if(!t || !opts) return;
-      lines.push('', PUB_LABELS[k] || k);
-      if(opts.bb && t.buildingBlocksUrl) lines.push('Building Blocks: ' + t.buildingBlocksUrl);
-      if(opts.root && t.rootPageLevelUrl) lines.push('Root/Page Level: ' + t.rootPageLevelUrl);
+      const meta = VALIDATE_PUB_META[k];
+      if(!t || !meta) return;
+      lines.push('', meta.chip + ' — ' + meta.title);
+      if(meta.bb && t.buildingBlocksUrl) lines.push('Building Blocks: ' + t.buildingBlocksUrl);
+      if(meta.root && t.rootPageLevelUrl) lines.push('Root/Page Level: ' + t.rootPageLevelUrl);
     });
     if(data.mdx && data.mdx.ok && data.mdx.href){
       lines.push('', 'MDX detail');
@@ -507,6 +657,8 @@
     const coerced = coerceDiningInput(raw);
     await ensureResolverModules();
     let entries = {};
+    let lgcySlots = {};
+    let chainSupplements = {};
     let mdxEntries = {};
     try {
       const idxRes = await fetch('/data/dining-slug-index.json');
@@ -514,6 +666,14 @@
         const idx = await idxRes.json();
         entries = idx.entries || idx;
       }
+    } catch (_) {}
+    try {
+      const lgcyRes = await fetch('/data/dining-lgcy-slots-by-slug.json');
+      if(lgcyRes.ok) lgcySlots = await lgcyRes.json();
+    } catch (_) {}
+    try {
+      const supRes = await fetch('/data/dining-chain-supplements-by-slug.json');
+      if(supRes.ok) chainSupplements = await supRes.json();
     } catch (_) {}
     try {
       const mdxRes = await fetch('/data/mdx-facility-by-slug.json');
@@ -525,9 +685,9 @@
 
     let data;
     if(globalThis.DScribeLinks && globalThis.DiningResolveCore){
-      data = globalThis.DiningResolveCore.resolveDiningUrl(coerced, globalThis.DScribeLinks, entries);
+      data = globalThis.DiningResolveCore.resolveDiningUrl(coerced, globalThis.DScribeLinks, entries, lgcySlots, chainSupplements);
     } else if(globalThis.ValidateResolverInline){
-      data = globalThis.ValidateResolverInline.resolveDiningUrl(coerced, entries);
+      data = globalThis.ValidateResolverInline.resolveDiningUrl(coerced, entries, lgcySlots, chainSupplements);
     } else {
       return {
         ok: false,

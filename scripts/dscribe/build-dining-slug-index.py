@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import urllib.parse
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -59,8 +60,23 @@ def slug_from_title(title: str) -> str | None:
     return None
 
 
+def slug_from_webdav(rec: dict) -> str | None:
+    """Prod slug from .tpg / resort-dining path when CMS title differs (e.g. LGCY page title Sanaa → sanaa-lounge.tpg)."""
+    wd = urllib.parse.unquote(rec.get("webdav") or "")
+    m = re.search(r"/resort-dining/[^/]+/([a-z0-9]+(-[a-z0-9]+)*)/", wd, re.I)
+    if m and SLUG_RE.match(m.group(1)):
+        return m.group(1).lower()
+    m = re.search(r"/([a-z0-9]+(-[a-z0-9]+)*)\.tpg$", wd, re.I)
+    if m and SLUG_RE.match(m.group(1)):
+        return m.group(1).lower()
+    return None
+
+
 def slug_from_page(rec: dict) -> str | None:
     s = slug_from_title(rec.get("title") or "")
+    if s:
+        return s
+    s = slug_from_webdav(rec)
     if s:
         return s
     webdav = rec.get("webdav") or ""
@@ -265,7 +281,8 @@ def index_bb_folder(by_id: dict, index: dict, rec: dict, tree: str) -> None:
     title = display_name_from_slug(slug, rec.get("title"))
     entry = ensure_entry(index, key, slug, park, title)
     tree_slot = ensure_tree_slot(entry, tree)
-    if not tree_slot.get("bbParentChain"):
+    existing = tree_slot.get("bbParentChain") or []
+    if not existing or len(chain) > len(existing):
         tree_slot["bbParentChain"] = chain
 
 

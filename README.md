@@ -36,7 +36,7 @@ Sidebar **Validate**: paste a WDW prod dining URL (`disneyworld.disney.go.com/di
 
 1. Display name
 2. **Site:** Production, Stage (`stage.` host), Latest (`latest.` host)
-3. **D-Scribe:** EVO040 **Building Blocks**; EVO065 **Building Blocks** + **Root/Page Level** (facility-deep when indexed; otherwise publication-level folders + a note). LGCY065 and EVO040 Root are omitted in the UI for now.
+3. **D-Scribe:** **EVO040** Building Blocks only; **EVO065** Building Blocks + Root/Page Level; **LGCY065** Root/Page Level only (no BB). Each publication is a labeled chip in the UI (facility-deep when indexed; otherwise publication-level folders + a note).
 4. **MDX app** deep link: `mdx://finder/detail?facilityId=…;entityType=…` (offline from `data/mdx-facility-by-slug.json`; rebuild with `node scripts/mdx/build-mdx-slug-index.js` when `DSCRIBE_DATA` points at dining-content-ops data)
 5. **Locales** on the latest host (path mid-segment, casing preserved): `es-us`, `en_CA`, `fr-ca`, `es-ar`, `es-mx`, `es-pe`, `es-co`, `es-cl`, `pt-br`
 

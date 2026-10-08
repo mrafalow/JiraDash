@@ -20,23 +20,46 @@ Launch builds from **GitLab** (`gitlab.disney.com`), not GitHub. Your GitHub rep
 
 ### 2. Push this project to GitLab
 
-In **your** terminal (from this repo folder):
+GitLab was created as **JiraDashDisney** (with an initial README). Push the real app on top of `main`.
+
+1. On GitLab → **Code** → copy the **HTTPS** clone URL (e.g. `https://gitlab.disney.com/<namespace>/JiraDashDisney.git`).
+2. Create a [Personal Access Token](https://gitlab.disney.com/-/user_settings/personal_access_tokens) with **`read_repository`** + **`write_repository`** (use the token as the password when Git asks — not your Disney SSO password).
+
+In **Terminal** from this repo folder:
 
 ```bash
-git remote add gitlab https://gitlab.disney.com/<namespace>/jira-dash.git
-git push -u gitlab HEAD:main
+git remote add gitlab https://gitlab.disney.com/<namespace>/JiraDashDisney.git
+# If remote already exists: git remote set-url gitlab <url>
+
+git push gitlab HEAD:main
 ```
 
-Use a GitLab **Personal Access Token** as the password when prompted (`read_repository` + `write_repository`).
+If Git rejects because of the README-only commit on GitLab, either merge once:
+
+```bash
+git fetch gitlab main
+git merge gitlab/main --allow-unrelated-histories -m "Merge GitLab README with JiraDash"
+git push gitlab HEAD:main
+```
+
+or, if you are fine replacing GitLab’s initial README only:
+
+```bash
+git push gitlab HEAD:main --force-with-lease
+```
+
+**Latest commit with Dockerfile:** ensure you have the Studioshare scaffold commit (`Add Studioshare Launch Docker scaffold…`) before pushing.
 
 ### 3. Let Launch read the private repo
 
 **Project → Manage → Members → Invite** user **`f-pta-gitlab-svc`** with role **Reporter**.
 
-### 4. Create the Launch app
+### 4. Connect the Launch app to GitLab
 
-1. [developer.studioshare.wds.io](https://developer.studioshare.wds.io) → **Create application**.
-2. Connect it to the GitLab repo and branch **`main`**.
+1. [developer.studioshare.wds.io](https://developer.studioshare.wds.io) → your app (**JiraDash**).
+2. **Settings** (or setup) → repository → choose **GitLab** (already connected if you see “Disconnect GitLab”).
+3. Search **`JiraDashDisney`** and select **Marcin Rafalowicz / JiraDashDisney**.
+4. Production branch: **`main`**.
 
 ### 5. GitLab webhook (Launch does not add this automatically)
 

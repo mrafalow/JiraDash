@@ -1,0 +1,17 @@
+{
+  "sanaa-lounge": {
+    "pageTcm": "tcm:627-1019514-64",
+    "itemNumber": 1019514,
+    "pageTitle": "Sanaa",
+    "bbParentChain": [],
+    "pageParentChain": [
+      "tcm:627-216346-4",
+      "tcm:627-293232-4",
+      "tcm:627-293235-4",
+      "tcm:627-295188-4",
+      "tcm:627-295265-4",
+      "tcm:627-295269-4",
+      "tcm:627-295270-4"
+    ]
+  }
+}

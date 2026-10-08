@@ -1219,15 +1219,14 @@ function renderContentDelivery(){
   updateContentFooterVisibility();
 }
 
-function recentlyClosedOwnTickets(){
-  return ((STATE.data && STATE.data.recentlyClosedTickets) || []).filter(t => !isContentTicket(t));
+function recentlyClosedRows(){
+  return (STATE.data && STATE.data.recentlyClosedTickets) || [];
 }
 
 function renderTable(){
   const wrap = document.getElementById('tableWrap');
   const isActive = STATE.tableMode === 'active';
-  // Recently Closed is WDW/own closed only — never CONTENT delivery tickets.
-  const rows = isActive ? (STATE.data.activeTickets || []) : recentlyClosedOwnTickets();
+  const rows = isActive ? (STATE.data.activeTickets || []) : recentlyClosedRows();
 
   if(!rows.length){
     wrap.innerHTML = '<div class="empty-state"><b>Nothing here yet</b>'+(isActive?'No active requests right now.':'No recently closed tickets to show.')+'</div>';
@@ -1251,9 +1250,10 @@ function renderTable(){
       const translationsPending = translations && translations.status !== 'Closed';
       const tLink = jiraLink(t.key);
       const keyHtml = tLink ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+t.key+'</a>' : t.key;
+      const keyCell = '<span class="ticket-key-cell">'+keyHtml+msBadgeHtml(t)+'</span>';
       if(isActive){
         return '<tr>' +
-          '<td class="primary">'+keyHtml+'</td>' +
+          '<td class="primary">'+keyCell+'</td>' +
           '<td>'+escapeHtml(t.summary)+'</td>' +
           '<td>'+(t.priority||'').replace(/^\d+ - /,'')+'</td>' +
           '<td>'+fmtDate(t.dueDate)+'</td>' +
@@ -1263,7 +1263,7 @@ function renderTable(){
         '</tr>';
       }
       return '<tr>' +
-        '<td class="primary">'+keyHtml+'</td>' +
+        '<td class="primary">'+keyCell+'</td>' +
         '<td>'+escapeHtml(t.summary)+'</td>' +
         '<td>'+(t.priority||'').replace(/^\d+ - /,'')+'</td>' +
         '<td>'+fmtDate(t.closedDate)+'</td>' +
@@ -1288,7 +1288,7 @@ function openTranslationsEntries(){
   }
   ((STATE.data && STATE.data.activeTickets) || []).forEach(consider);
   ((STATE.data && STATE.data.msSoloTickets) || []).forEach(consider);
-  recentlyClosedOwnTickets().forEach(consider);
+  recentlyClosedRows().forEach(consider);
   return entries;
 }
 
@@ -1303,7 +1303,7 @@ function renderTranslations(){
     const st = (t.subtasks || []).find(s => s.type === 'TRANSLATIONS');
     if(st) entries.push({ ticket: t, st });
   });
-  recentlyClosedOwnTickets().forEach(t => {
+  recentlyClosedRows().forEach(t => {
     const st = (t.subtasks || []).find(s => s.type === 'TRANSLATIONS');
     if(st) entries.push({ ticket: t, st });
   });

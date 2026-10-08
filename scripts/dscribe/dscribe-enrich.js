@@ -5,6 +5,8 @@ const path = require('path');
 const core = require('./dining-resolve-core.js');
 const { lookupSlugEntryLive } = require('./dscribe-live.js');
 const { getCookie } = require('./dscribe-session.js');
+const { loadLgcySlotsBySlug } = require('./dining-lgcy-slots.js');
+const { loadChainSupplementsBySlug } = require('./dining-chain-supplements.js');
 
 function chainScore(slot) {
   if (!slot) return 0;
@@ -72,26 +74,34 @@ function lookupFromCrawl(lookupKey) {
   }
 }
 
-function applyEntryToResult(result, entry, links) {
+function applyEntryToResult(result, entry, links, slotCtx) {
   if (!entry) return result;
-  const merged = mergeEntry(result._entry || {}, entry);
+  const ctx = slotCtx || { slug: result.slug };
+  let merged = mergeEntry(result._entry || {}, entry);
+  merged = core.enrichEntryFromSlugScan(merged, ctx) || merged;
   result._entry = merged;
   result.displayName = merged.displayName || result.displayName;
-  result.evo040 = core.categoryPayload(links, 'evo040', core.slotForPub(merged, 'evo040'));
-  result.evo065 = core.categoryPayload(links, 'evo065', core.slotForPub(merged, 'evo065'));
-  result.lgcy065 = core.categoryPayload(links, 'lgcy065', core.slotForPub(merged, 'lgcy065'));
+  result.evo040 = core.categoryPayload(links, 'evo040', core.slotForPub(merged, 'evo040', ctx));
+  result.evo065 = core.categoryPayload(links, 'evo065', core.slotForPub(merged, 'evo065', ctx));
+  result.lgcy065 = core.categoryPayload(links, 'lgcy065', core.slotForPub(merged, 'lgcy065', ctx));
   return result;
 }
 
-async function enrichResult(result, links) {
+async function enrichResult(result, links, indexEntries) {
   if (!needsEnrich(result)) return result;
 
   const lookupKey = result.lookupKey || result.slug;
   const warnings = (result.warnings || []).slice();
+  const slotCtx = {
+    entries: indexEntries,
+    slug: result.slug,
+    lgcySlotsBySlug: loadLgcySlotsBySlug(),
+    chainSupplementsBySlug: loadChainSupplementsBySlug()
+  };
 
   let entry = lookupFromCrawl(lookupKey);
   if (entry) {
-    applyEntryToResult(result, entry, links);
+    applyEntryToResult(result, entry, links, slotCtx);
     warnings.push('D-Scribe folder chains filled from local crawl (DSCRIBE_DATA).');
   }
 
@@ -100,7 +110,7 @@ async function enrichResult(result, links) {
     if (live.authFailed) {
       warnings.push('DScribe session expired — paste a fresh cookie in Validate → D-Scribe session.');
     } else if (live.entry) {
-      applyEntryToResult(result, live.entry, links);
+      applyEntryToResult(result, live.entry, links, slotCtx);
       warnings.push('D-Scribe folder chains filled via live CMS search.');
     } else if (live.error) {
       warnings.push(live.error);
