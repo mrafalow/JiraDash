@@ -423,7 +423,7 @@ function shortHorizonTicketKey(key){
   return String(key).replace(/^WDW-/i, 'W').replace(/^CONTENT-/i, 'MS');
 }
 
-/** Active WDW/own + CONTENT delivery rows for due calendar / horizon list. */
+/** Active WDW/own + CONTENT delivery rows (On the Horizon list default). */
 function horizonSourceTickets(){
   const active = (STATE.data && STATE.data.activeTickets) || [];
   const content = (STATE.data && STATE.data.contentTickets) || [];
@@ -431,6 +431,30 @@ function horizonSourceTickets(){
   const out = [];
   active.concat(content).forEach(t => {
     if(!t || !t.key || seen.has(t.key)) return;
+    seen.add(t.key);
+    out.push(t);
+  });
+  return out;
+}
+
+function horizonPublishedTicketKeys(){
+  const keys = new Set();
+  ((STATE.data && STATE.data.recentlyClosedTickets) || []).forEach(t => {
+    if(t && t.key) keys.add(t.key);
+  });
+  return keys;
+}
+
+function isHorizonPublished(t){
+  return !!(t && t.key && horizonPublishedTicketKeys().has(t.key));
+}
+
+/** Active + recently closed with due dates (calendar + day drill-down). */
+function horizonCalendarTickets(){
+  const seen = new Set();
+  const out = [];
+  horizonSourceTickets().concat((STATE.data && STATE.data.recentlyClosedTickets) || []).forEach(t => {
+    if(!t || !t.key || !dueDateKey(t.dueDate) || seen.has(t.key)) return;
     seen.add(t.key);
     out.push(t);
   });
@@ -533,13 +557,16 @@ function bindHorizonInteractions(){
 
 function renderHorizonListItems(listTickets){
   return '<div class="horizon-list">'+listTickets.map((t, i) => {
-    const due = horizonDueLabel(t.dueDate);
+    const published = isHorizonPublished(t);
+    const due = published
+      ? { text: 'Published', cls: 'published' }
+      : horizonDueLabel(t.dueDate);
     const tLink = jiraLink(t.key);
     const shortKey = shortHorizonTicketKey(t.key);
     const keyHtml = tLink
       ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+escapeHtml(shortKey)+'</a>'
       : escapeHtml(shortKey);
-    const kind = isContentTicket(t) ? 'content' : 'own';
+    const kind = published ? 'done' : (isContentTicket(t) ? 'content' : 'own');
     return '<div class="horizon-item kind-'+kind+'">' +
       '<div class="horizon-rank">'+(i+1)+'</div>' +
       '<div class="horizon-main">' +
@@ -553,15 +580,16 @@ function renderHorizonListItems(listTickets){
 
 function renderHorizonPanel(){
   if(!STATE.data) return;
-  const tickets = horizonSourceTickets();
+  const activeTickets = horizonSourceTickets();
+  const calendarTickets = horizonCalendarTickets();
   const today = todayMid();
   const todayKey = dueDateKey(today);
-  const dueToday = dueTodayTickets(tickets);
-  const allOrdered = horizonTickets(tickets);
+  const dueToday = dueTodayTickets(activeTickets);
+  const allOrdered = horizonTickets(calendarTickets);
   const filterDay = STATE.horizonFilterDay;
   const listTickets = filterDay
     ? allOrdered.filter(t => dueDateKey(t.dueDate) === filterDay)
-    : allOrdered;
+    : allOrdered.filter(t => !isHorizonPublished(t));
 
   const year = STATE.calYear;
   const month = STATE.calMonth;
@@ -577,24 +605,28 @@ function renderHorizonPanel(){
   }
   for(let day = 1; day <= daysInMonth; day++){
     const key = dueDateKey(new Date(year, month, day));
-    const due = ticketsDueOn(tickets, key);
-    const hasOwn = due.some(t => !isContentTicket(t));
-    const hasContent = due.some(t => isContentTicket(t));
+    const due = ticketsDueOn(calendarTickets, key);
+    const dueActive = due.filter(t => !isHorizonPublished(t));
+    const duePublished = due.filter(t => isHorizonPublished(t));
+    const hasOwn = dueActive.some(t => !isContentTicket(t));
+    const hasContent = dueActive.some(t => isContentTicket(t));
+    const hasPublishedOnly = duePublished.length > 0 && !dueActive.length;
     const count = due.length;
     const isToday = key === todayKey;
     const isSelected = filterDay === key;
     const title = count
-      ? due.map(t => t.key + (t.summary ? ' — ' + t.summary : '')).join('\n')
+      ? due.map(t => t.key + (t.summary ? ' — ' + t.summary : '') + (isHorizonPublished(t) ? ' (published)' : '')).join('\n')
       : (isToday ? 'Nothing due today' : 'No launches this day');
     const classes = ['cal-day', 'is-clickable'];
     if(hasOwn) classes.push('has-due-own');
     if(hasContent) classes.push('has-due-content');
+    if(hasPublishedOnly) classes.push('has-due-done');
     if(isToday) classes.push('is-today');
     if(isSelected) classes.push('is-selected');
     const visible = due.slice(0, 1);
     const overflow = due.length - visible.length;
     const chips = visible.map(t => {
-      const kind = isContentTicket(t) ? 'content' : 'own';
+      const kind = isHorizonPublished(t) ? 'done' : (isContentTicket(t) ? 'content' : 'own');
       const label = shortHorizonTicketKey(t.key);
       const link = jiraLink(t.key);
       if(link){
@@ -625,6 +657,7 @@ function renderHorizonPanel(){
     '<div class="cal-legend">' +
       '<span class="cal-legend-item"><span class="cal-day-mark mark-own"></span> WDW</span>' +
       '<span class="cal-legend-item"><span class="cal-day-mark mark-content"></span> MS</span>' +
+      '<span class="cal-legend-item"><span class="cal-day-mark mark-done"></span> Published</span>' +
     '</div>';
 
   document.getElementById('dueCalendar').innerHTML =
@@ -693,7 +726,7 @@ function renderBottomStrip(){
     publishState = anyUnapproved ? 'red' : 'green';
   }
 
-  const translationsOpen = openTranslationsEntries().length;
+  const trActionCount = translationActionTickets().length;
   const msQueue = msQueueTickets();
   const msQueueCount = msQueue.length;
   const msCheckins = collectMsCheckinTickets(STATE.data);
@@ -739,12 +772,13 @@ function renderBottomStrip(){
         ? 'Waiting on Others — '+waiting.length+' ticket'+(waiting.length===1?'':'s')+' sitting with someone else. Activate to jump to Waiting section.'
         : 'Waiting on Others — nothing stalled'
     }) +
-    strip('translate', 'var(--band-blue)', 'Translations', translationsOpen, translationsOpen ? 'Open sub-tasks' : 'Nothing open', {
+    strip('translate', 'var(--band-blue)', 'Translations', trActionCount,
+      trActionCount ? 'Recently closed — action needed' : 'Nothing open', {
       id: 'translationsStrip',
-      clickable: translationsOpen > 0,
+      clickable: trActionCount > 0,
       clickableAccent: 'blue',
-      ariaLabel: translationsOpen
-        ? 'Translations — '+translationsOpen+' open. Activate to open Translations view.'
+      ariaLabel: trActionCount
+        ? 'Translations — '+trActionCount+' need action. Activate to open Translations.'
         : 'Translations — nothing open'
     });
 
@@ -1045,7 +1079,7 @@ function bindWaitingStrip(){
 }
 
 function handleTranslationsActivate(){
-  if(!openTranslationsEntries().length) return;
+  if(!translationActionTickets().length) return;
   const nav = document.getElementById('navTranslations') ||
     document.querySelector('.nav-item[data-view="translations"]');
   if(nav && !nav.classList.contains('disabled') && nav.getAttribute('aria-disabled') !== 'true'){
@@ -1223,6 +1257,68 @@ function recentlyClosedRows(){
   return (STATE.data && STATE.data.recentlyClosedTickets) || [];
 }
 
+function trReviewApi(){
+  return globalThis.TranslationsReview || null;
+}
+
+function renderClosedTranslationsCell(t){
+  const tr = trReviewApi();
+  if(!tr){
+    return '<span class="tr-status-muted">—</span>';
+  }
+  const info = tr.closedTranslationsState(t);
+  const label = tr.statusLabel(info);
+  const key = escapeAttr(t.key);
+  let phaseChip = '';
+  if(info.state === 'awaiting-prodval'){
+    phaseChip = '<span class="tr-phase-chip tr-phase-wait" title="Prod Validation subtask not closed yet">Validate</span>';
+  } else {
+    phaseChip = '<span class="tr-phase-chip tr-phase-done" title="Prod Validation closed">Done</span>';
+  }
+
+  let actionHtml = '';
+  if(info.state === 'review'){
+    actionHtml =
+      '<div class="tr-choice-row">' +
+        '<button type="button" class="tr-choice-btn tr-choice-needed" data-tr-choice="needed" data-tr-key="'+key+'">Needed</button>' +
+        '<button type="button" class="tr-choice-btn tr-choice-na" data-tr-choice="not-needed" data-tr-key="'+key+'">Not needed</button>' +
+      '</div>';
+  } else if(info.state === 'all-closed'){
+    actionHtml = '<span class="tr-status-ok">All closed</span>';
+  } else if(info.state === 'pending'){
+    actionHtml = '<span class="pending-note tr-status-pending">● '+escapeHtml(label)+'</span>';
+    if(info.reason === 'needed-yours'){
+      actionHtml += '<button type="button" class="tr-choice-btn tr-choice-na tr-choice-secondary" data-tr-choice="not-needed" data-tr-key="'+key+'">Not needed</button>';
+    }
+  } else if(info.state === 'nudge-ms'){
+    actionHtml = '<span class="pending-note tr-status-nudge">● '+escapeHtml(label)+'</span>';
+    actionHtml += '<button type="button" class="tr-choice-btn tr-choice-na tr-choice-secondary" data-tr-choice="not-needed" data-tr-key="'+key+'">Not needed</button>';
+  } else {
+    actionHtml = '<span class="tr-status-muted">'+escapeHtml(label)+'</span>';
+  }
+
+  return '<div class="tr-cell">'+phaseChip+actionHtml+'</div>';
+}
+
+function bindClosedTranslationsChoices(container){
+  if(!container || container.dataset.trChoiceBound) return;
+  container.dataset.trChoiceBound = '1';
+  container.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-tr-choice]');
+    if(!btn) return;
+    const tr = trReviewApi();
+    if(!tr) return;
+    const choice = btn.getAttribute('data-tr-choice');
+    const key = btn.getAttribute('data-tr-key');
+    if(!key || !choice) return;
+    tr.saveChoice(key, choice);
+    renderTable();
+    renderTranslations();
+    renderBottomStrip();
+    updateTeamNavAvailability();
+  });
+}
+
 function renderTable(){
   const wrap = document.getElementById('tableWrap');
   const isActive = STATE.tableMode === 'active';
@@ -1246,8 +1342,6 @@ function renderTable(){
       const stageKey = model && model.currentOpen && !model.currentOpen.missing ? model.currentOpen.subtask.key : null;
       const stageLink = jiraLink(stageKey);
       const stageHtml = stageLink ? '<a class="jira-link" href="'+stageLink+'" target="_blank" rel="noopener">'+stageLabel+'</a>' : stageLabel;
-      const translations = !isActive ? (t.subtasks||[]).find(s => s.type === 'TRANSLATIONS') : null;
-      const translationsPending = translations && translations.status !== 'Closed';
       const tLink = jiraLink(t.key);
       const keyHtml = tLink ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+t.key+'</a>' : t.key;
       const keyCell = '<span class="ticket-key-cell">'+keyHtml+msBadgeHtml(t)+'</span>';
@@ -1267,78 +1361,22 @@ function renderTable(){
         '<td>'+escapeHtml(t.summary)+'</td>' +
         '<td>'+(t.priority||'').replace(/^\d+ - /,'')+'</td>' +
         '<td>'+fmtDate(t.closedDate)+'</td>' +
-        '<td>'+(translationsPending ? '<span class="pending-note">● Translations pending</span>' : 'All closed')+'</td>' +
+        '<td class="tr-col">'+renderClosedTranslationsCell(t)+'</td>' +
       '</tr>';
     }).join('') +
     '</tbody></table>';
   wrap.innerHTML = html;
 }
 
-/** Open (non-Closed) TRANSLATIONS on active + recently closed — same pool as Translations nav enablement. */
-function openTranslationsEntries(){
-  const entries = [];
-  const seen = new Set();
-  function consider(t){
-    const st = (t.subtasks || []).find(s => s.type === 'TRANSLATIONS');
-    if(!st || st.status === 'Closed') return;
-    const id = st.key || (t.key + ':TRANSLATIONS');
-    if(seen.has(id)) return;
-    seen.add(id);
-    entries.push({ ticket: t, st });
-  }
-  ((STATE.data && STATE.data.activeTickets) || []).forEach(consider);
-  ((STATE.data && STATE.data.msSoloTickets) || []).forEach(consider);
-  recentlyClosedRows().forEach(consider);
-  return entries;
+/** Recently closed parents needing translation follow-up (review, pending, nudge-ms). */
+function translationActionTickets(){
+  const tr = trReviewApi();
+  if(!tr) return [];
+  return recentlyClosedRows().filter(t => tr.needsTranslationAction(t));
 }
 
-function renderTranslations(){
-  const wrap = document.getElementById('translationsWrap');
-  const entries = [];
-  ((STATE.data && STATE.data.activeTickets) || []).forEach(t => {
-    const st = (t.subtasks || []).find(s => s.type === 'TRANSLATIONS');
-    if(st) entries.push({ ticket: t, st });
-  });
-  ((STATE.data && STATE.data.msSoloTickets) || []).forEach(t => {
-    const st = (t.subtasks || []).find(s => s.type === 'TRANSLATIONS');
-    if(st) entries.push({ ticket: t, st });
-  });
-  recentlyClosedRows().forEach(t => {
-    const st = (t.subtasks || []).find(s => s.type === 'TRANSLATIONS');
-    if(st) entries.push({ ticket: t, st });
-  });
-
-  if(!entries.length){
-    wrap.innerHTML = '<div class="empty-state"><b>Nothing here yet</b>Translations subtasks will show up here once a ticket needs them.</div>';
-    return;
-  }
-
-  entries.sort((a,b) => {
-    const aOpen = a.st.status !== 'Closed', bOpen = b.st.status !== 'Closed';
-    if(aOpen !== bOpen) return aOpen ? -1 : 1;
-    return 0;
-  });
-
-  const today = todayMid();
-  const html = '<table class="data-table"><thead><tr><th>Ticket</th><th>Page</th><th>Subtask</th><th>Status</th><th>Assignee</th><th>Open</th></tr></thead><tbody>' +
-    entries.map(({ticket, st}) => {
-      const isOpen = st.status !== 'Closed';
-      const openDays = (isOpen && st.createdDate) ? businessDaysBetween(atMidnight(st.createdDate), today) : null;
-      const tLink = jiraLink(ticket.key);
-      const keyHtml = tLink ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+ticket.key+'</a>' : ticket.key;
-      const stLink = jiraLink(st.key);
-      const stKeyHtml = stLink ? '<a class="jira-link" href="'+stLink+'" target="_blank" rel="noopener">'+st.key+'</a>' : (st.key || '—');
-      return '<tr>' +
-        '<td class="primary">'+keyHtml+'</td>' +
-        '<td>'+escapeHtml(ticket.summary)+'</td>' +
-        '<td class="primary">'+stKeyHtml+'</td>' +
-        '<td>'+(isOpen ? '<span class="pending-note">● '+escapeHtml(st.status)+'</span>' : 'Closed')+'</td>' +
-        '<td>'+(st.assigneeName ? escapeHtml(st.assigneeName) : '—')+'</td>' +
-        '<td>'+(openDays !== null ? openDays+'d' : '—')+'</td>' +
-      '</tr>';
-    }).join('') +
-    '</tbody></table>';
-  wrap.innerHTML = html;
+function countClosedTranslationActions(){
+  return translationActionTickets().length;
 }
 
 const TEAM_VIEWS = {
@@ -1393,7 +1431,36 @@ function renderCopy(){ renderTeamSubtaskView('copy'); }
 function renderMedia(){ renderTeamSubtaskView('media'); }
 function renderAlttext(){ renderTeamSubtaskView('alttext'); }
 
-/** Enable Copy / Media / Alt Text / Translations nav only when matching open sub-tasks exist. */
+function renderTranslations(){
+  const wrap = document.getElementById('translationsWrap');
+  if(!wrap) return;
+  const rows = translationActionTickets();
+
+  if(!rows.length){
+    wrap.innerHTML = '<div class="empty-state"><b>Nothing open right now</b>No recently closed tickets need translation action.</div>';
+    return;
+  }
+
+  const html = '<table class="data-table"><thead><tr>' +
+    '<th>Ticket</th><th>Summary</th><th>Priority</th><th>Closed Date</th><th>Translations</th>' +
+    '</tr></thead><tbody>' +
+    rows.map(t => {
+      const tLink = jiraLink(t.key);
+      const keyHtml = tLink ? '<a class="jira-link" href="'+tLink+'" target="_blank" rel="noopener">'+t.key+'</a>' : t.key;
+      const keyCell = '<span class="ticket-key-cell">'+keyHtml+msBadgeHtml(t)+'</span>';
+      return '<tr>' +
+        '<td class="primary">'+keyCell+'</td>' +
+        '<td>'+escapeHtml(t.summary)+'</td>' +
+        '<td>'+(t.priority||'').replace(/^\d+ - /,'')+'</td>' +
+        '<td>'+fmtDate(t.closedDate)+'</td>' +
+        '<td class="tr-col">'+renderClosedTranslationsCell(t)+'</td>' +
+      '</tr>';
+    }).join('') +
+    '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+/** Enable TEAMS nav when matching open sub-tasks exist on active tickets. */
 function updateTeamNavAvailability(){
   Object.keys(TEAM_VIEWS).forEach(viewKey => {
     const cfg = TEAM_VIEWS[viewKey];
@@ -1410,7 +1477,7 @@ function updateTeamNavAvailability(){
   const navTr = document.getElementById('navTranslations') ||
     document.querySelector('.nav-item[data-view="translations"]');
   if(navTr){
-    const hasTr = openTranslationsEntries().length > 0;
+    const hasTr = translationActionTickets().length > 0;
     navTr.classList.toggle('disabled', !hasTr);
     navTr.setAttribute('aria-disabled', hasTr ? 'false' : 'true');
     if(!hasTr && navTr.classList.contains('active')){
@@ -1632,4 +1699,6 @@ document.getElementById('configResetBtn').addEventListener('click', resetConfigT
 
 loadSavedConfig();
 STATE.showMsPublishWatch = loadMsPublishWatchPref();
+bindClosedTranslationsChoices(document.getElementById('tableWrap'));
+bindClosedTranslationsChoices(document.getElementById('translationsWrap'));
 loadAll(false);

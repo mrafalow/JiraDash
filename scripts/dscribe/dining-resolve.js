@@ -7,6 +7,7 @@ const core = require('./dining-resolve-core.js');
 const { mergeIndexEntries, enrichResult } = require('./dscribe-enrich.js');
 const { loadLgcySlotsBySlug } = require('./dining-lgcy-slots.js');
 const { loadChainSupplementsBySlug } = require('./dining-chain-supplements.js');
+const { loadSlugAliasesByUrlSlug } = require('./dining-slug-aliases.js');
 const { mdxPayloadForResolve } = require('../mdx/mdx-facility.js');
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -57,7 +58,8 @@ async function resolveDiningUrl(rawUrl) {
   const { entries } = loadIndex();
   const lgcySlots = loadLgcySlotsBySlug();
   const chainSupplements = loadChainSupplementsBySlug();
-  let result = core.resolveDiningUrl(rawUrl, links, entries, lgcySlots, chainSupplements);
+  const slugAliases = loadSlugAliasesByUrlSlug();
+  let result = core.resolveDiningUrl(rawUrl, links, entries, lgcySlots, chainSupplements, slugAliases);
   if (!result.ok) return result;
   result = await enrichResult(result, links, entries);
   if (result._entry) delete result._entry;
@@ -69,7 +71,8 @@ function resolveDiningUrlSync(rawUrl) {
   const { entries } = loadIndex();
   const lgcySlots = loadLgcySlotsBySlug();
   const chainSupplements = loadChainSupplementsBySlug();
-  const result = core.resolveDiningUrl(rawUrl, links, entries, lgcySlots, chainSupplements);
+  const slugAliases = loadSlugAliasesByUrlSlug();
+  const result = core.resolveDiningUrl(rawUrl, links, entries, lgcySlots, chainSupplements, slugAliases);
   if (result.ok) result.mdx = mdxPayloadForResolve(result.slug);
   return result;
 }

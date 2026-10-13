@@ -47,13 +47,31 @@ function mergeEntry(existing, incoming) {
   return out;
 }
 
+/** True when note means index/crawl/live should backfill — not informational (e.g. pub 472 BB hint). */
+function isEnrichGapNote(note) {
+  if (!note) return false;
+  if (/pub 472 \(EVO045 GB/i.test(note)) return false;
+  return /No facility|Rebuild|publication-level|No Root\/page folder chain in index|No Building Blocks folder chain in index/i.test(
+    note
+  );
+}
+
+function hasIndexedFacilityDepth(result) {
+  const e065 = result && result.evo065;
+  if (e065 && typeof e065.pageChainDepth === 'number' && e065.pageChainDepth > 0) return true;
+  const e040 = result && result.evo040;
+  if (e040 && e040.bbOpensPubId === '472') return true;
+  if (e040 && e040.buildingBlocksUrl && /\/0-472-1_/.test(e040.buildingBlocksUrl)) return true;
+  if (e065 && e065.buildingBlocksUrl && /\/0-934-1_.+934-\d+-/.test(e065.buildingBlocksUrl)) return true;
+  return false;
+}
+
 function needsEnrich(result) {
   if (!result || !result.ok) return false;
-  // EVO065 publish (934) is the primary Validate target; skip crawl/live when it is facility-deep.
-  if (result.evo065 && !result.evo065.note) return false;
+  if (hasIndexedFacilityDepth(result)) return false;
   return ['evo040', 'evo065', 'lgcy065'].some((k) => {
     const block = result[k];
-    return !!(block && block.note);
+    return !!(block && isEnrichGapNote(block.note));
   });
 }
 
@@ -92,9 +110,10 @@ async function enrichResult(result, links, indexEntries) {
 
   const lookupKey = result.lookupKey || result.slug;
   const warnings = (result.warnings || []).slice();
+  const indexSlug = result.indexSlug || result.slug;
   const slotCtx = {
     entries: indexEntries,
-    slug: result.slug,
+    slug: indexSlug,
     lgcySlotsBySlug: loadLgcySlotsBySlug(),
     chainSupplementsBySlug: loadChainSupplementsBySlug()
   };
@@ -106,13 +125,13 @@ async function enrichResult(result, links, indexEntries) {
   }
 
   if (needsEnrich(result) && getCookie()) {
-    const live = await lookupSlugEntryLive(result.slug, lookupKey);
+    const live = await lookupSlugEntryLive(indexSlug, lookupKey);
     if (live.authFailed) {
       warnings.push('DScribe session expired — paste a fresh cookie in Validate → D-Scribe session.');
     } else if (live.entry) {
       applyEntryToResult(result, live.entry, links, slotCtx);
       warnings.push('D-Scribe folder chains filled via live CMS search.');
-    } else if (live.error) {
+    } else if (live.error && needsEnrich(result)) {
       warnings.push(live.error);
     }
   } else if (needsEnrich(result) && !getCookie()) {

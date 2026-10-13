@@ -139,33 +139,32 @@ function slotQualityScore(slot, pubKey) {
   return score;
 }
 
-function bestSlotForPubFromSlugRows(entries, slug, pubKey) {
+/** Merge BB + page slots from every index row for this slug (do not pick one row over another). */
+function mergedSlotForPubFromSlugRows(entries, slug, pubKey) {
   if (!entries || !slug) return null;
-  let best = null;
-  let bestScore = -1;
+  let merged = null;
   for (const k of Object.keys(entries)) {
     const row = entries[k];
     if (!row || !indexKeyMatchesSlug(k, row, slug)) continue;
     const slot = rawSlotForPub(row, pubKey);
-    const score = slotQualityScore(slot, pubKey);
-    if (score > bestScore) {
-      bestScore = score;
-      best = slot;
-    }
+    if (!slot || !slotHasFacilityChains(slot)) continue;
+    merged = merged ? mergeSlots(merged, slot, true) : Object.assign({}, slot);
   }
-  return best;
+  return merged;
 }
 
-/** Pick richest EVO040/065 chains across all index rows for this slug (472 BB beats 501 migration). */
+function bestSlotForPubFromSlugRows(entries, slug, pubKey) {
+  return mergedSlotForPubFromSlugRows(entries, slug, pubKey);
+}
+
+/** Enrich entry with merged chains from all index rows sharing this CMS slug. */
 function enrichEntryFromSlugScan(entry, ctx) {
   if (!entry || !ctx || !ctx.entries || !ctx.slug) return entry;
   const out = Object.assign({}, entry);
   ['evo040', 'evo065'].forEach((pubKey) => {
-    const best = bestSlotForPubFromSlugRows(ctx.entries, ctx.slug, pubKey);
-    if (!best) return;
-    if (slotQualityScore(best, pubKey) > slotQualityScore(out[pubKey], pubKey)) {
-      out[pubKey] = Object.assign({}, best);
-    }
+    const scanned = mergedSlotForPubFromSlugRows(ctx.entries, ctx.slug, pubKey);
+    if (!scanned) return;
+    out[pubKey] = mergeSlots(out[pubKey], scanned, true);
   });
   const supplements = ctx.chainSupplementsBySlug && ctx.chainSupplementsBySlug[ctx.slug];
   if (supplements) {
@@ -248,10 +247,21 @@ function categoryPayload(links, pubKey, slot) {
       'No Root/page folder chain in index — Root link opens publication Root.';
   }
 
+  const bbSourcePub = sourcePubFromChain(bbChain);
+  const bbOpensPubId =
+    pubKey === 'evo040' && bbSourcePub === '472' && bbChain.length ? '472' : null;
+  if (bbOpensPubId) {
+    const bbNote =
+      'Building Blocks open in pub 472 (EVO045 GB en-US); BB is authored there, not on EVO040 publish 281.';
+    note = note ? note + ' ' + bbNote : bbNote;
+  }
+
   return {
     buildingBlocksUrl,
     rootPageLevelUrl,
-    note
+    note,
+    bbOpensPubId,
+    pageChainDepth: pageChain.length
   };
 }
 
@@ -263,25 +273,41 @@ function categoryPayload(links, pubKey, slot) {
  * @param {object} [lgcySlotsBySlug] - optional pub 627 page chains by prod slug
  * @param {object} [chainSupplementsBySlug] - optional per-slug EVO/LGCY chain patches
  */
-function resolveDiningUrl(rawUrl, links, entries, lgcySlotsBySlug, chainSupplementsBySlug) {
+function resolveDiningUrl(rawUrl, links, entries, lgcySlotsBySlug, chainSupplementsBySlug, slugAliases) {
   const norm = links.normalizeProdUrl(rawUrl);
   if (norm.error) {
     return { ok: false, error: norm.error };
   }
 
-  const merged = lookupEntry(entries, norm.lookupKey, norm.slug);
+  const aliasMap = slugAliases && typeof slugAliases === 'object' ? slugAliases : {};
+  const indexSlug =
+    aliasMap[norm.slug] ||
+    aliasMap[String(norm.slug || '').toLowerCase()] ||
+    norm.slug;
+
+  const merged = lookupEntry(entries, norm.lookupKey, indexSlug);
   const slotCtx = {
     entries,
-    slug: norm.slug,
+    slug: indexSlug,
     lgcySlotsBySlug: lgcySlotsBySlug || null,
     chainSupplementsBySlug: chainSupplementsBySlug || null
   };
   const entry = merged ? enrichEntryFromSlugScan(merged, slotCtx) : merged;
   const displayName = entry
-    ? entry.displayName || links.titleCaseSlug(norm.slug)
+    ? entry.displayName || links.titleCaseSlug(indexSlug)
     : links.titleCaseSlug(norm.slug);
 
   const warnings = [];
+  if (indexSlug !== norm.slug) {
+    warnings.push(
+      'URL slug “' + norm.slug + '” mapped to CMS index slug “' + indexSlug + '”.'
+    );
+  }
+  if (norm.contentKind === 'entertainment') {
+    warnings.push(
+      'Entertainment URL — D-Scribe links use dining index data when the CMS slug matches.'
+    );
+  }
   if (!entry) {
     warnings.push(
       'Slug not found in dining index — showing title from URL only. Rebuild data/dining-slug-index.json from crawl.'
@@ -313,8 +339,10 @@ function resolveDiningUrl(rawUrl, links, entries, lgcySlotsBySlug, chainSuppleme
   return {
     ok: true,
     slug: norm.slug,
+    indexSlug,
     parkSegment: norm.parkSegment,
     lookupKey: norm.lookupKey,
+    contentKind: norm.contentKind || 'dining',
     displayName,
     prodUrl: norm.prodUrl,
     stageUrl: links.stageUrlFromProd(norm.prodUrl),

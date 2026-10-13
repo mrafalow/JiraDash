@@ -261,6 +261,7 @@ function classifySubtaskType(summary){
   if(prefix === 'PR') return 'PR';
   if(prefix === 'WF') return 'WF';
   if(prefix.indexOf('PROD VALIDATION') === 0) return 'PRODVAL';
+  if(prefix === 'PROD') return 'PRODVAL';
   if(prefix.indexOf('TRANSLATION') === 0) return 'TRANSLATIONS';
   if(prefix === 'COPY') return 'COPY';
   if(prefix === 'MEDIA') return 'MEDIA';

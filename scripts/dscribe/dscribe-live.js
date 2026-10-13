@@ -9,6 +9,15 @@ const PUB_SLOTS = {
   '627': 'lgcy065'
 };
 
+function itemNumberFromTcm(id, suffix) {
+  const body = String(id || '').split(':')[1] || '';
+  const parts = body.split('-');
+  if (parts.length < 2) return null;
+  if (suffix && !body.endsWith('-' + suffix)) return null;
+  const n = parseInt(parts[1], 10);
+  return Number.isFinite(n) ? n : null;
+}
+
 function apiHeaders(cookie) {
   return {
     Cookie: cookie,
@@ -105,7 +114,7 @@ function slugFromItem(it, targetSlug) {
 
 function pathMentionsDining(it) {
   const path = String(it.path || it.Path || '').toLowerCase();
-  return path.includes('dining');
+  return path.includes('dining') || path.includes('entertainment') || path.includes('things-to-do');
 }
 
 async function walkParentChain(cookie, startParent, stopSuffixes) {
@@ -177,8 +186,19 @@ async function lookupSlugEntryLive(slug, lookupKey) {
       if (!slot.pageParentChain.length) {
         slot.pageTcm = id;
         slot.pageTitle = it.title || it.Title || slug;
+        slot.itemNumber = itemNumberFromTcm(id, '64');
         const parent = it.parent || it.Parent;
         slot.pageParentChain = await walkParentChain(cookie, parent, ['-3-4', '-1-2']);
+      }
+    }
+    if (String(id).endsWith('-4') && pathMentionsDining(it)) {
+      const body = id.split(':')[1] || '';
+      if (body.endsWith('-3-4')) continue;
+      if (!slot.pageParentChain.length) {
+        const parent = it.parent || it.Parent;
+        const ancestors = await walkParentChain(cookie, parent, ['-3-4', '-1-2']);
+        slot.pageParentChain = ancestors.concat([id]);
+        slot.pageTitle = it.title || it.Title || slug;
       }
     }
     if (String(id).endsWith('-2')) {

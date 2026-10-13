@@ -239,12 +239,13 @@ function mapClosedTicket(issue, subtasksByParent, currentAccountId){
     dueDate: datePrefix(f.duedate),
     closedDate: datePrefix(f.resolutiondate),
     assigneeName: assignee.assigneeName,
+    assigneeIsCurrentUser: assignee.assigneeIsCurrentUser,
     subtasks: (subtasksByParent[issue.key] || []).slice()
   };
 }
 
-const RECENTLY_CLOSED_LIMIT = 20;
-const RECENTLY_CLOSED_PER_PROJECT = 15;
+const RECENTLY_CLOSED_LIMIT = 80;
+const RECENTLY_CLOSED_PER_PROJECT = 50;
 
 /** WDW + CONTENT closed parents, merged by resolution date (newest first). */
 async function fetchRecentlyClosedIssues(parentFields){

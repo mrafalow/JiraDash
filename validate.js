@@ -64,25 +64,41 @@
     if(h.startsWith('stage.')) h = h.slice(6);
     return h;
   }
+  function isLocalePathSegment(seg){
+    const s = String(seg || '').toLowerCase().replace(/_/g, '-');
+    return LOCALES.some((loc) => String(loc).toLowerCase().replace(/_/g, '-') === s);
+  }
+  function stripLeadingLocaleSegments(segments){
+    const out = segments.slice();
+    while(out.length && isLocalePathSegment(out[0])) out.shift();
+    return out;
+  }
   function normalizeProdUrl(raw){
     const trimmed = String(raw || '').trim();
     if(!trimmed) return { error: 'Paste a URL first.' };
     let u;
     try { u = new URL(trimmed); } catch (_) { return { error: 'Invalid URL.' }; }
-    if(!u.hostname.toLowerCase().includes('disney.go.com')) return { error: 'Expected a disney.go.com URL (v1: WDW dining).' };
+    if(!u.hostname.toLowerCase().includes('disney.go.com')) return { error: 'Expected a disney.go.com URL (WDW dining or entertainment).' };
     u.search = ''; u.hash = '';
     u.hostname = stripEnv(u.hostname);
     let path = u.pathname;
     if(!path.endsWith('/')) path += '/';
-    const segments = path.split('/').filter(Boolean);
+    let segments = stripLeadingLocaleSegments(path.split('/').filter(Boolean));
     const di = segments.indexOf('dining');
-    if(di < 0) return { error: 'URL path should include /dining/…' };
-    const after = segments.slice(di + 1);
-    if(!after.length) return { error: 'Missing facility slug after /dining/.' };
+    const ei = segments.indexOf('entertainment');
+    const anchor = di >= 0 ? di : ei;
+    if(anchor < 0) return { error: 'URL path should include /dining/… or /entertainment/…' };
+    const section = segments[anchor];
+    const contentKind = di >= 0 ? 'dining' : 'entertainment';
+    const after = segments.slice(anchor + 1);
+    if(!after.length) return { error: 'Missing slug after /' + section + '/.' };
     const slug = after[after.length - 1];
     const park = after.length > 1 ? after[0] : '';
-    u.pathname = '/dining/' + after.join('/') + '/';
-    return { prodUrl: u.toString(), slug, parkSegment: park, lookupKey: park ? park + '/' + slug : slug };
+    u.pathname = '/' + section + '/' + after.join('/') + '/';
+    return {
+      prodUrl: u.toString(), slug, parkSegment: park,
+      lookupKey: park ? park + '/' + slug : slug, contentKind
+    };
   }
   function stageFromProd(prodUrl, loc){
     const u = new URL(prodUrl);
@@ -228,28 +244,28 @@
     if(slot.itemNumber) score += 5;
     return score;
   }
-  function bestSlotForPubFromSlugRows(entries, slug, pubKey){
+  function slotHasFacilityChains(slot){
+    return bbChain(slot).length > 0 || pageChain(slot).length > 0;
+  }
+  function mergedSlotForPubFromSlugRows(entries, slug, pubKey){
     if(!entries || !slug) return null;
-    let best = null;
-    let bestScore = -1;
+    let merged = null;
     for(const k of Object.keys(entries)){
       const row = entries[k];
       if(!row || !indexKeyMatchesSlug(k, row, slug)) continue;
       const slot = rawSlotForPub(row, pubKey);
-      const score = slotQualityScore(slot, pubKey);
-      if(score > bestScore){ bestScore = score; best = slot; }
+      if(!slot || !slotHasFacilityChains(slot)) continue;
+      merged = merged ? mergeSlots(merged, slot, true) : Object.assign({}, slot);
     }
-    return best;
+    return merged;
   }
   function enrichEntryFromSlugScan(entry, ctx){
     if(!entry || !ctx || !ctx.entries || !ctx.slug) return entry;
     const out = Object.assign({}, entry);
     ['evo040','evo065'].forEach((pubKey) => {
-      const best = bestSlotForPubFromSlugRows(ctx.entries, ctx.slug, pubKey);
-      if(!best) return;
-      if(slotQualityScore(best, pubKey) > slotQualityScore(out[pubKey], pubKey)){
-        out[pubKey] = Object.assign({}, best);
-      }
+      const scanned = mergedSlotForPubFromSlugRows(ctx.entries, ctx.slug, pubKey);
+      if(!scanned) return;
+      out[pubKey] = mergeSlots(out[pubKey], scanned, true);
     });
     const supplements = ctx.chainSupplementsBySlug && ctx.chainSupplementsBySlug[ctx.slug];
     if(supplements){
@@ -305,25 +321,41 @@
       const withItem = pageFolderExplorer(pubKey, pc, slot.itemNumber);
       if(withItem) rootPageLevelUrl = withItem;
     }
+    const bbSourcePub = sourcePubFromChain(bbc);
+    const bbOpensPubId = (pubKey === 'evo040' && bbSourcePub === '472' && bbc.length) ? '472' : null;
+    if(bbOpensPubId){
+      const bbNote = 'Building Blocks open in pub 472 (EVO045 GB en-US); BB is authored there, not on EVO040 publish 281.';
+      note = note ? note + ' ' + bbNote : bbNote;
+    }
     return {
       buildingBlocksUrl: facilityBB(pubKey, bbc),
       rootPageLevelUrl,
-      note
+      note,
+      bbOpensPubId,
+      pageChainDepth: pc.length
     };
   }
-  function resolveDiningUrl(rawUrl, entries, lgcySlotsBySlug, chainSupplementsBySlug){
+  function resolveDiningUrl(rawUrl, entries, lgcySlotsBySlug, chainSupplementsBySlug, slugAliases){
     const norm = normalizeProdUrl(rawUrl);
     if(norm.error) return { ok: false, error: norm.error };
-    const merged = lookupEntry(entries, norm.lookupKey, norm.slug);
+    const aliasMap = slugAliases && typeof slugAliases === 'object' ? slugAliases : {};
+    const indexSlug = aliasMap[norm.slug] || aliasMap[String(norm.slug || '').toLowerCase()] || norm.slug;
+    const merged = lookupEntry(entries, norm.lookupKey, indexSlug);
     const slotCtx = {
       entries,
-      slug: norm.slug,
+      slug: indexSlug,
       lgcySlotsBySlug: lgcySlotsBySlug || null,
       chainSupplementsBySlug: chainSupplementsBySlug || null
     };
     const entry = merged ? enrichEntryFromSlugScan(merged, slotCtx) : merged;
-    const displayName = entry ? (entry.displayName || titleCase(norm.slug)) : titleCase(norm.slug);
+    const displayName = entry ? (entry.displayName || titleCase(indexSlug)) : titleCase(norm.slug);
     const warnings = [];
+    if(indexSlug !== norm.slug){
+      warnings.push('URL slug “' + norm.slug + '” mapped to CMS index slug “' + indexSlug + '”.');
+    }
+    if(norm.contentKind === 'entertainment'){
+      warnings.push('Entertainment URL — D-Scribe links use dining index data when the CMS slug matches.');
+    }
     if(!entry){
       warnings.push('Slug not found in dining index — showing title from URL only. Rebuild data/dining-slug-index.json from crawl.');
     } else if(norm.lookupKey && !entries[norm.lookupKey] && norm.parkSegment){
@@ -331,7 +363,8 @@
     }
     const locales = LOCALES.map((locale) => ({ locale, url: localeLatest(norm.prodUrl, locale) }));
     return {
-      ok: true, slug: norm.slug, parkSegment: norm.parkSegment, lookupKey: norm.lookupKey, displayName,
+      ok: true, slug: norm.slug, indexSlug, parkSegment: norm.parkSegment, lookupKey: norm.lookupKey,
+      contentKind: norm.contentKind || 'dining', displayName,
       prodUrl: norm.prodUrl, stageUrl: stageFromProd(norm.prodUrl), latestUrl: latestFromProd(norm.prodUrl),
       locales,
       evo040: categoryPayload('evo040', slotForPub(entry, 'evo040', slotCtx)),
@@ -428,8 +461,21 @@
 
   const VALIDATE_PUB_ORDER = ['evo040', 'evo065', 'lgcy065'];
 
+  function pubMetaFor(pubKey, tree){
+    const base = VALIDATE_PUB_META[pubKey];
+    if(!base) return null;
+    if(pubKey === 'evo040' && tree && tree.bbOpensPubId === '472'){
+      return Object.assign({}, base, {
+        title: 'EVO045 WDW GB (en-US) Content',
+        chip: 'EVO045',
+        hint: 'Building Blocks in pub 472 (authored here — not EVO040 publish 281)'
+      });
+    }
+    return base;
+  }
+
   function pubBlock(pubKey, tree){
-    const meta = VALIDATE_PUB_META[pubKey];
+    const meta = pubMetaFor(pubKey, tree);
     if(!tree || !meta) return '';
     let html = '<div class="validate-pub-block validate-pub-block--' + meta.tone + '">';
     html += '<div class="validate-pub-head">' +
@@ -659,6 +705,7 @@
     let entries = {};
     let lgcySlots = {};
     let chainSupplements = {};
+    let slugAliases = {};
     let mdxEntries = {};
     try {
       const idxRes = await fetch('/data/dining-slug-index.json');
@@ -676,6 +723,10 @@
       if(supRes.ok) chainSupplements = await supRes.json();
     } catch (_) {}
     try {
+      const aliasRes = await fetch('/data/dining-slug-aliases.json');
+      if(aliasRes.ok) slugAliases = await aliasRes.json();
+    } catch (_) {}
+    try {
       const mdxRes = await fetch('/data/mdx-facility-by-slug.json');
       if(mdxRes.ok){
         const mdxIdx = await mdxRes.json();
@@ -685,9 +736,9 @@
 
     let data;
     if(globalThis.DScribeLinks && globalThis.DiningResolveCore){
-      data = globalThis.DiningResolveCore.resolveDiningUrl(coerced, globalThis.DScribeLinks, entries, lgcySlots, chainSupplements);
+      data = globalThis.DiningResolveCore.resolveDiningUrl(coerced, globalThis.DScribeLinks, entries, lgcySlots, chainSupplements, slugAliases);
     } else if(globalThis.ValidateResolverInline){
-      data = globalThis.ValidateResolverInline.resolveDiningUrl(coerced, entries, lgcySlots, chainSupplements);
+      data = globalThis.ValidateResolverInline.resolveDiningUrl(coerced, entries, lgcySlots, chainSupplements, slugAliases);
     } else {
       return {
         ok: false,

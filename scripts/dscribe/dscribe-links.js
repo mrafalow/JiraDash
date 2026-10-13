@@ -174,6 +174,19 @@ function stripEnvHostPrefix(hostname) {
   return host;
 }
 
+function isLocalePathSegment(seg) {
+  const s = String(seg || '').toLowerCase().replace(/_/g, '-');
+  return LOCALES.some((loc) => String(loc).toLowerCase().replace(/_/g, '-') === s);
+}
+
+function stripLeadingLocaleSegments(segments) {
+  const out = segments.slice();
+  while (out.length && isLocalePathSegment(out[0])) {
+    out.shift();
+  }
+  return out;
+}
+
 function normalizeProdUrl(raw) {
   const trimmed = String(raw || '').trim();
   if (!trimmed) return { error: 'Paste a URL first.' };
@@ -185,33 +198,38 @@ function normalizeProdUrl(raw) {
   }
   const host = u.hostname.toLowerCase();
   if (!host.includes('disney.go.com')) {
-    return { error: 'Expected a disney.go.com URL (v1: WDW dining).' };
+    return { error: 'Expected a disney.go.com URL (WDW dining or entertainment).' };
   }
   u.search = '';
   u.hash = '';
   u.hostname = stripEnvHostPrefix(u.hostname);
   let path = u.pathname;
   if (!path.endsWith('/')) path += '/';
-  const segments = path.split('/').filter(Boolean);
+  let segments = stripLeadingLocaleSegments(path.split('/').filter(Boolean));
   const diningIdx = segments.indexOf('dining');
-  if (diningIdx < 0) {
-    return { error: 'URL path should include /dining/…' };
+  const entertainmentIdx = segments.indexOf('entertainment');
+  const anchorIdx = diningIdx >= 0 ? diningIdx : entertainmentIdx;
+  if (anchorIdx < 0) {
+    return { error: 'URL path should include /dining/… or /entertainment/…' };
   }
-  const after = segments.slice(diningIdx + 1);
+  const contentKind = diningIdx >= 0 ? 'dining' : 'entertainment';
+  const section = segments[anchorIdx];
+  const after = segments.slice(anchorIdx + 1);
   if (!after.length) {
-    return { error: 'Missing facility slug after /dining/.' };
+    return { error: 'Missing slug after /' + section + '/.' };
   }
   const slug = after[after.length - 1];
   const parkSegment = after.length > 1 ? after[0] : '';
   const lookupKey = parkSegment ? parkSegment + '/' + slug : slug;
-  const canonicalPath = '/dining/' + after.join('/') + '/';
+  const canonicalPath = '/' + section + '/' + after.join('/') + '/';
   u.pathname = canonicalPath;
   return {
     prodUrl: u.toString(),
     slug,
     parkSegment,
     lookupKey,
-    pathAfterDining: after.join('/')
+    contentKind,
+    pathAfterSection: after.join('/')
   };
 }
 
