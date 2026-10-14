@@ -9,6 +9,7 @@ const { loadLgcySlotsBySlug } = require('./dining-lgcy-slots.js');
 const { loadChainSupplementsBySlug } = require('./dining-chain-supplements.js');
 const { loadSlugAliasesByUrlSlug } = require('./dining-slug-aliases.js');
 const { mdxPayloadForResolve } = require('../mdx/mdx-facility.js');
+const { attachScopedSearchToResult } = require('./dscribe-scoped-search.js');
 
 const ROOT = path.join(__dirname, '..', '..');
 let indexCache = null;
@@ -63,6 +64,12 @@ async function resolveDiningUrl(rawUrl) {
   if (!result.ok) return result;
   result = await enrichResult(result, links, entries);
   if (result._entry) delete result._entry;
+  result = await attachScopedSearchToResult(result);
+  if (Array.isArray(result.warnings)) {
+    result.warnings = result.warnings.filter(
+      (w) => !/No facility folders found in DScribe search/i.test(String(w))
+    );
+  }
   result.mdx = mdxPayloadForResolve(result.slug);
   return result;
 }

@@ -222,45 +222,32 @@ function bbChainFromSlot(slot) {
 function categoryPayload(links, pubKey, slot) {
   const bbChain = bbChainFromSlot(slot);
   const pageChain = pageChainFromSlot(slot);
-  const buildingBlocksUrl = links.facilityBuildingBlocksExplorer(pubKey, bbChain);
-  let rootPageLevelUrl = links.facilityRootPageExplorer(pubKey, pageChain);
+  const hasBb = bbChain.length > 0;
+  const hasPage = pageChain.length > 0;
+  const buildingBlocksUrl = hasBb ? links.facilityBuildingBlocksExplorer(pubKey, bbChain) : null;
+  let rootPageLevelUrl = hasPage ? links.facilityRootPageExplorer(pubKey, pageChain) : null;
   if (slot && slot.itemNumber && pageChain.length && links.pageFolderExplorer) {
     const withItem = links.pageFolderExplorer(pubKey, pageChain, slot.itemNumber);
     if (withItem) rootPageLevelUrl = withItem;
   }
 
   let note = null;
-  if (!slot) {
-    note =
-      'No facility folders in index for this slug — opening publication-level folders. Rebuild data/dining-slug-index.json from crawl.';
-  } else if (slot.lgcyFromPageItem && pubKey === 'lgcy065') {
+  if (slot && slot.lgcyFromPageItem && pubKey === 'lgcy065' && hasPage) {
     note =
       'LGCY065 page folder from pub 627 supplement (CMS page title may differ from URL slug).';
-  } else if (!bbChain.length && !pageChain.length) {
-    note =
-      'Index has no BB/page folder chains — opening publication-level folders. Rebuild with DSCRIBE_DATA crawl.';
-  } else if (!bbChain.length) {
-    note =
-      'No Building Blocks folder chain in index — BB link opens publication Building Blocks.';
-  } else if (!pageChain.length) {
-    note =
-      'No Root/page folder chain in index — Root link opens publication Root.';
-  }
-
-  const bbSourcePub = sourcePubFromChain(bbChain);
-  const bbOpensPubId =
-    pubKey === 'evo040' && bbSourcePub === '472' && bbChain.length ? '472' : null;
-  if (bbOpensPubId) {
-    const bbNote =
-      'Building Blocks open in pub 472 (EVO045 GB en-US); BB is authored there, not on EVO040 publish 281.';
-    note = note ? note + ' ' + bbNote : bbNote;
+  } else if (!hasBb && !hasPage) {
+    note = 'No facility folder in index — use publication search below when session is active.';
+  } else if (!hasBb && pubKey !== 'lgcy065') {
+    note = 'No Building Blocks chain in index — BB search below.';
+  } else if (!hasPage && pubKey !== 'evo040') {
+    note = 'No Root/page chain in index — page search below.';
   }
 
   return {
     buildingBlocksUrl,
     rootPageLevelUrl,
     note,
-    bbOpensPubId,
+    bbOpensPubId: null,
     pageChainDepth: pageChain.length
   };
 }
@@ -305,7 +292,7 @@ function resolveDiningUrl(rawUrl, links, entries, lgcySlotsBySlug, chainSuppleme
   }
   if (norm.contentKind === 'entertainment') {
     warnings.push(
-      'Entertainment URL — D-Scribe links use dining index data when the CMS slug matches.'
+      'Entertainment URL — EVO065 Root/Page needs an entertainment folder in the index or a D-Scribe session search (below).'
     );
   }
   if (!entry) {

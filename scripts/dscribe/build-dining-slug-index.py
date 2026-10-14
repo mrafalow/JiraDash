@@ -140,7 +140,11 @@ def pub_from_id(tcm_id: str) -> str:
 def path_mentions_dining(rec: dict) -> bool:
     path = (rec.get("path") or "").lower()
     webdav = (rec.get("webdav") or "").lower()
-    return "dining" in path or "dining" in webdav
+    combined = path + " " + webdav
+    for token in ("dining", "entertainment", "events", "things-to-do"):
+        if token in combined:
+            return True
+    return False
 
 
 def walk_parent_chain(by_id: dict, start_parent: str | None) -> list[str]:

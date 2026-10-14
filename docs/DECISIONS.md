@@ -2,6 +2,9 @@
 
 One line (or short paragraph) per meaningful change. Newest first.
 
+- **2026-10-13:** Validate offline crawl fallback — when live CMS search misses, grep `items.jsonl` via `DSCRIBE_DATA` (no `rg` required); entertainment shows candidate lists with folder paths; US All pubs 281/934/914 only.
+- **2026-10-13:** Validate US All lock — explorer/search scoped to publish pubs **281 / 934 / 914** only (no GB **472** links); no silent Root/BB when index lacks facility depth; scoped cookie search lists candidates with folder path + exact ✓; crawl index filter includes entertainment/events.
+- **2026-10-13:** Solo pipeline scoring — plan-aware checkpoints: Copy/Media/Alt `expectedBy` uses Jira subtask due when set; RA close follows earliest craft due minus `RA_CRAFT_BUFFER` (2bd) when craft subtasks exist; Settings BIZ values remain fallback when subtasks are missing or have no due. Fixtures: `node scripts/test-prioritize-score.js`.
 - **2026-10-13:** Recently Closed translations review — after Prod Val closes, Needed/Not needed stored in browser; MS-owned parents show Nudge MS until Translations subtask opens (then pending); open subtask overrides Not needed.
 - **2026-10-13:** TEAMS **Translations** lane lists `needsTranslationAction` on recently closed parents (decide Needed/Not needed, pending, nudge MS). Recently Closed table keeps the Translations column for context; no separate All/Translations-action toggle.
 - **2026-10-13:** On the Horizon — calendar includes **published** (recently closed) due dates as neutral “done” days; default list excludes published; clicking a day shows all launches that day including published.

@@ -4,9 +4,10 @@ const { DSCRIBE_BASE, getCookie } = require('./dscribe-session.js');
 
 const PUB_SLOTS = {
   '281': 'evo040',
-  '472': 'evo040',
   '283': 'evo065',
-  '627': 'lgcy065'
+  '627': 'lgcy065',
+  '934': 'evo065',
+  '914': 'lgcy065'
 };
 
 function itemNumberFromTcm(id, suffix) {
@@ -114,7 +115,12 @@ function slugFromItem(it, targetSlug) {
 
 function pathMentionsDining(it) {
   const path = String(it.path || it.Path || '').toLowerCase();
-  return path.includes('dining') || path.includes('entertainment') || path.includes('things-to-do');
+  return (
+    path.includes('dining') ||
+    path.includes('entertainment') ||
+    path.includes('events') ||
+    path.includes('things-to-do')
+  );
 }
 
 async function walkParentChain(cookie, startParent, stopSuffixes) {
@@ -156,7 +162,20 @@ async function lookupSlugEntryLive(slug, lookupKey) {
 
   let items;
   try {
-    items = await searchItems(cookie, slug);
+    const queries = [slug];
+    if (lookupKey && lookupKey !== slug) queries.push(lookupKey.split('/').pop());
+    items = [];
+    const seen = new Set();
+    for (const q of queries) {
+      const batch = await searchItems(cookie, q);
+      for (const it of batch) {
+        const id = it.id || it.Id;
+        if (id && !seen.has(id)) {
+          seen.add(id);
+          items.push(it);
+        }
+      }
+    }
   } catch (err) {
     return { entry: null, error: err.message, authFailed: err.status === 401 || err.status === 403 };
   }
@@ -176,8 +195,10 @@ async function lookupSlugEntryLive(slug, lookupKey) {
     const pub = pubFromTcm(id);
     const tree = PUB_SLOTS[pub];
     if (!tree) continue;
-    const itemSlug = slugFromItem(it, slug);
-    if (itemSlug !== slug) continue;
+    const urlSlug = lookupKey && lookupKey.includes('/') ? lookupKey.split('/').pop() : lookupKey;
+    let itemSlug = slugFromItem(it, slug);
+    if (!itemSlug && urlSlug && urlSlug !== slug) itemSlug = slugFromItem(it, urlSlug);
+    if (itemSlug !== slug && (!urlSlug || itemSlug !== urlSlug)) continue;
 
     if (!entry[tree]) entry[tree] = emptySlot();
     const slot = entry[tree];

@@ -14,6 +14,8 @@ const DEFAULT_BIZ = {
   TRANSLATIONS_WINDOW: 7
 };
 const BIZ = Object.assign({}, DEFAULT_BIZ);
+/** Business days before earliest craft due when RA close becomes expected (not in Settings). */
+const RA_CRAFT_BUFFER = 2;
 const PRIORITY_MULT = {
   '1 - Critical': 1.4,
   '2 - High': 1.15,
@@ -82,6 +84,37 @@ function isManagedServicesTicket(ticket){
   return !!(ticket && (ticket.managedServices || ticket.scoringProfile === 'ms'));
 }
 
+function neededCraftSubtaskExists(needed, get){
+  return ['COPY', 'MEDIA', 'ALTTEXT'].some(type => needed[type] && !!get(type));
+}
+
+function earliestCraftDue(needed, get){
+  let earliest = null;
+  ['COPY', 'MEDIA', 'ALTTEXT'].forEach(type => {
+    if(!needed[type]) return;
+    const st = get(type);
+    if(!st || !st.dueDate) return;
+    const d = atMidnight(st.dueDate);
+    if(!earliest || d < earliest) earliest = d;
+  });
+  return earliest;
+}
+
+function expectedByForCraftSubtask(st, day0){
+  if(st && st.dueDate) return atMidnight(st.dueDate);
+  return addBusinessDays(day0, BIZ.COND_CLOSE_BY);
+}
+
+function expectedByForRaClose(ra, day0, needed, get){
+  if(!ra) return addBusinessDays(day0, BIZ.RA_CLOSE_BY);
+  if(!neededCraftSubtaskExists(needed, get)){
+    return addBusinessDays(day0, BIZ.RA_CLOSE_BY);
+  }
+  const earliest = earliestCraftDue(needed, get);
+  if(earliest) return addBusinessDays(earliest, -RA_CRAFT_BUFFER);
+  return addBusinessDays(day0, BIZ.COND_CLOSE_BY);
+}
+
 /**
  * Stage model for scoring / next-action.
  * WDW (default): RA → Copy/Media/Alt (when needed) → PR → WF → Prod Val → Translations.
@@ -113,22 +146,32 @@ function buildStageModel(ticket){
 
   const checkpoints = [];
 
+  const raCloseExpectedBy = expectedByForRaClose(ra, day0, needed, get);
+  const craftDueEarliest = !isMs ? earliestCraftDue(needed, get) : null;
+
   checkpoints.push({ key:'RA created', expectedBy: addBusinessDays(day0, BIZ.RA_CREATE_BY), actualTrue: !!ra });
-  checkpoints.push({ key:'RA closed', expectedBy: addBusinessDays(day0, BIZ.RA_CLOSE_BY), actualTrue: !!ra && ra.status === 'Closed' });
+  checkpoints.push({ key:'RA closed', expectedBy: raCloseExpectedBy, actualTrue: !!ra && ra.status === 'Closed' });
 
   if(!isMs){
     ['COPY','MEDIA','ALTTEXT'].forEach(type => {
       if(needed[type]){
         const st = get(type);
-        checkpoints.push({ key: STAGE_LABELS[type]+' closed', expectedBy: addBusinessDays(day0, BIZ.COND_CLOSE_BY), actualTrue: !!st && st.status === 'Closed' });
+        checkpoints.push({
+          key: STAGE_LABELS[type]+' closed',
+          expectedBy: expectedByForCraftSubtask(st, day0),
+          actualTrue: !!st && st.status === 'Closed'
+        });
       }
     });
   }
 
-  let gateOpen = addBusinessDays(day0, BIZ.RA_CLOSE_BY);
+  let gateOpen = new Date(raCloseExpectedBy);
   if(!isMs){
     ['COPY','MEDIA','ALTTEXT'].forEach(type => {
-      if(needed[type]) gateOpen = new Date(Math.max(gateOpen, addBusinessDays(day0, BIZ.COND_CLOSE_BY)));
+      if(needed[type]){
+        const st = get(type);
+        gateOpen = new Date(Math.max(gateOpen, expectedByForCraftSubtask(st, day0)));
+      }
     });
   }
   const pr = get('PR');
@@ -181,7 +224,8 @@ function buildStageModel(ticket){
   return {
     checkpoints, expectedIndex, actualIndex, stageGap, needed, currentOpen,
     totalStages: checkpoints.length, dueDate: due, day0, timelineTight,
-    scoringProfile: isMs ? 'ms' : 'wdw'
+    scoringProfile: isMs ? 'ms' : 'wdw',
+    earliestCraftDueDate: craftDueEarliest
   };
 }
 
@@ -248,10 +292,15 @@ function buildTag(ticket, model, scoring){
   const isMine = st.assigneeIsCurrentUser;
   const dayCount = businessDaysBetween(model.day0, today);
   const openDays = businessDaysBetween(st.createdDate, today);
-  if(!isMine){
-    return label + ' with ' + (st.assigneeName || 'assignee') + ' · open ' + openDays + 'd → Follow up with ' + (st.assigneeName || 'owner');
+  let craftHint = '';
+  if(co.type === 'RA' && model.earliestCraftDueDate){
+    const bdToCraft = businessDaysBetween(today, model.earliestCraftDueDate);
+    if(bdToCraft > 5) craftHint = ' · Craft due ' + fmtDate(model.earliestCraftDueDate);
   }
-  return label + ' open · day ' + dayCount + ' of pipeline → Move ' + label + ' forward';
+  if(!isMine){
+    return label + ' with ' + (st.assigneeName || 'assignee') + ' · open ' + openDays + 'd → Follow up with ' + (st.assigneeName || 'owner') + craftHint;
+  }
+  return label + ' open · day ' + dayCount + ' of pipeline → Move ' + label + ' forward' + craftHint;
 }
 
 function classifySubtaskType(summary){
@@ -938,5 +987,98 @@ function buildWaitingNudge(ticket, model, scoring){
     nudgeText,
     subtaskKey: null,
     stageType: 'COMMENT'
+  };
+}
+
+function isoDate(d){
+  const x = atMidnight(d);
+  const y = x.getFullYear();
+  const m = String(x.getMonth() + 1).padStart(2, '0');
+  const day = String(x.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + day;
+}
+
+function openSubtask(type, dueDate){
+  return { type, status: 'Open', dueDate: dueDate ? isoDate(dueDate) : null, createdDate: isoDate(addBusinessDays(todayMid(), -10)), assigneeIsCurrentUser: true };
+}
+
+/** Synthetic tickets — asserts plan-aware scoring invariants. */
+function runPrioritizeFixtures(){
+  const today = todayMid();
+  const fail = msg => { throw new Error('prioritize fixture: ' + msg); };
+
+  const parentDueFar = addBusinessDays(today, 11);
+  const day0Old = addBusinessDays(today, -15);
+  const craftDueFar = parentDueFar;
+
+  const scheduledFar = {
+    key: 'FIX-1',
+    priority: '1 - Critical',
+    createdDate: isoDate(day0Old),
+    dueDate: isoDate(parentDueFar),
+    subtasks: [
+      { type: 'RA', status: 'Open', description: '[x] Copy needed\n[x] Media needed', createdDate: isoDate(day0Old), assigneeIsCurrentUser: true },
+      openSubtask('COPY', craftDueFar),
+      openSubtask('MEDIA', craftDueFar)
+    ]
+  };
+  const m1 = buildStageModel(scheduledFar);
+  const s1 = computeScore(scheduledFar, m1);
+  if(m1.stageGap > 1) fail('scheduled craft far out: stageGap expected ≤1, got ' + m1.stageGap);
+  if(s1.score >= 75) fail('scheduled craft far out: score expected <75, got ' + s1.score);
+
+  const overlooked = {
+    key: 'FIX-2',
+    priority: '3 - Medium',
+    createdDate: isoDate(day0Old),
+    dueDate: isoDate(parentDueFar),
+    subtasks: [
+      { type: 'RA', status: 'Open', description: '[x] Copy needed\n[x] Media needed', createdDate: isoDate(day0Old), assigneeIsCurrentUser: true }
+    ]
+  };
+  const m2 = buildStageModel(overlooked);
+  if(m2.stageGap < 2) fail('no craft scheduled: stageGap expected ≥2, got ' + m2.stageGap);
+
+  const craftDuePast = addBusinessDays(today, -1);
+  const overdueCraft = {
+    key: 'FIX-3',
+    priority: '3 - Medium',
+    createdDate: isoDate(day0Old),
+    dueDate: isoDate(parentDueFar),
+    subtasks: [
+      { type: 'RA', status: 'Open', description: '[x] Copy needed', createdDate: isoDate(day0Old), assigneeIsCurrentUser: true },
+      openSubtask('COPY', craftDuePast)
+    ]
+  };
+  const m3 = buildStageModel(overdueCraft);
+  if(m3.stageGap < 2) fail('craft overdue: stageGap expected ≥2, got ' + m3.stageGap);
+
+  const msSolo = {
+    key: 'FIX-4',
+    scoringProfile: 'ms',
+    createdDate: isoDate(day0Old),
+    dueDate: isoDate(parentDueFar),
+    subtasks: [
+      { type: 'RA', status: 'Open', createdDate: isoDate(day0Old), assigneeIsCurrentUser: true }
+    ]
+  };
+  const m4 = buildStageModel(msSolo);
+  const raCloseCp = m4.checkpoints.find(c => c.key === 'RA closed');
+  const expectedRaMs = addBusinessDays(day0Old, BIZ.RA_CLOSE_BY).getTime();
+  if(!raCloseCp || raCloseCp.expectedBy.getTime() !== expectedRaMs){
+    fail('MS solo: RA close expectedBy should remain day0+RA_CLOSE_BY');
+  }
+
+  return { ok: true, cases: 4 };
+}
+
+if(typeof module === 'object' && module.exports){
+  module.exports = {
+    buildStageModel,
+    computeScore,
+    runPrioritizeFixtures,
+    BIZ,
+    DEFAULT_BIZ,
+    RA_CRAFT_BUFFER
   };
 }

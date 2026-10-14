@@ -82,16 +82,7 @@ function facilityExplorer(pubKey, kind, folderChainStructure) {
   const sourcePub = sourcePubFromChain(chain);
   const rootSuffix = kind === 'bb' ? BUILDING_BLOCKS_SUFFIX : ROOT_FOLDER_SUFFIX;
 
-  if (pubKey === 'evo040' && sourcePub === '472' && chain.length) {
-    const native = ['tcm:472-' + rootSuffix];
-    chain.forEach((id) => native.push(id));
-    return explorerContainerUrl('472', native);
-  }
-  // EVO045 migration / duplicate BB trees (501) do not exist under parent publish 934.
-  if (pubKey === 'evo065' && sourcePub === '501') {
-    return publicationBuildingBlocksExplorer(pubKey);
-  }
-
+  // US All Validate: always remap structure/migration pubs (283, 501, …) onto publish 281/934/914.
   const publishChain = ['tcm:' + pub.id + '-' + rootSuffix];
   chain.forEach((id) => {
     publishChain.push(remapTcmToPublishPub(id, pub.id));

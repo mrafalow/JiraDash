@@ -25,15 +25,6 @@
     const chain = folderChain || [];
     const sourcePub = sourcePubFromChain(chain);
     const rootSuffix = kind === 'bb' ? BB : ROOT;
-    if(pubKey === 'evo040' && sourcePub === '472' && chain.length){
-      const native = ['tcm:472-' + rootSuffix];
-      chain.forEach((t) => native.push(t));
-      return explorerContainerUrl('472', native);
-    }
-    if(pubKey === 'evo065' && sourcePub === '501'){
-      const id = PUBLISH_PUBS[pubKey].id;
-      return explorerContainerUrl(id, ['tcm:' + id + '-' + (kind === 'bb' ? BB : ROOT)]);
-    }
     const c = ['tcm:' + id + '-' + rootSuffix];
     chain.forEach((t) => c.push(remapTcm(t, id)));
     return explorerContainerUrl(id, c);
@@ -304,34 +295,24 @@
   function categoryPayload(pubKey, slot){
     const bbc = bbChain(slot);
     const pc = pageChain(slot);
+    const hasBb = bbc.length > 0;
+    const hasPage = pc.length > 0;
     let note = null;
-    if(!slot){
-      note = 'No facility folders in index for this slug — opening publication-level folders. Rebuild data/dining-slug-index.json from crawl.';
-    } else if(slot.lgcyFromPageItem && pubKey === 'lgcy065'){
+    if(slot && slot.lgcyFromPageItem && pubKey === 'lgcy065' && hasPage){
       note = 'LGCY065 page folder from pub 627 supplement (CMS page title may differ from URL slug).';
-    } else if(!bbc.length && !pc.length){
-      note = 'Index has no BB/page folder chains — opening publication-level folders. Rebuild with DSCRIBE_DATA crawl.';
-    } else if(!bbc.length){
-      note = 'No Building Blocks folder chain in index — BB link opens publication Building Blocks.';
-    } else if(!pc.length){
-      note = 'No Root/page folder chain in index — Root link opens publication Root.';
+    } else if(!hasBb && !hasPage){
+      note = 'No facility folder in index — use publication search below when session is active.';
     }
-    let rootPageLevelUrl = facilityRoot(pubKey, pc);
+    let rootPageLevelUrl = hasPage ? facilityRoot(pubKey, pc) : null;
     if(slot && slot.itemNumber && pc.length){
       const withItem = pageFolderExplorer(pubKey, pc, slot.itemNumber);
       if(withItem) rootPageLevelUrl = withItem;
     }
-    const bbSourcePub = sourcePubFromChain(bbc);
-    const bbOpensPubId = (pubKey === 'evo040' && bbSourcePub === '472' && bbc.length) ? '472' : null;
-    if(bbOpensPubId){
-      const bbNote = 'Building Blocks open in pub 472 (EVO045 GB en-US); BB is authored there, not on EVO040 publish 281.';
-      note = note ? note + ' ' + bbNote : bbNote;
-    }
     return {
-      buildingBlocksUrl: facilityBB(pubKey, bbc),
+      buildingBlocksUrl: hasBb ? facilityBB(pubKey, bbc) : null,
       rootPageLevelUrl,
       note,
-      bbOpensPubId,
+      bbOpensPubId: null,
       pageChainDepth: pc.length
     };
   }
@@ -461,21 +442,8 @@
 
   const VALIDATE_PUB_ORDER = ['evo040', 'evo065', 'lgcy065'];
 
-  function pubMetaFor(pubKey, tree){
-    const base = VALIDATE_PUB_META[pubKey];
-    if(!base) return null;
-    if(pubKey === 'evo040' && tree && tree.bbOpensPubId === '472'){
-      return Object.assign({}, base, {
-        title: 'EVO045 WDW GB (en-US) Content',
-        chip: 'EVO045',
-        hint: 'Building Blocks in pub 472 (authored here — not EVO040 publish 281)'
-      });
-    }
-    return base;
-  }
-
   function pubBlock(pubKey, tree){
-    const meta = pubMetaFor(pubKey, tree);
+    const meta = VALIDATE_PUB_META[pubKey];
     if(!tree || !meta) return '';
     let html = '<div class="validate-pub-block validate-pub-block--' + meta.tone + '">';
     html += '<div class="validate-pub-head">' +
@@ -483,14 +451,25 @@
       '<div class="validate-pub-head-text">' +
       '<div class="validate-pub-title">' + escapeHtml(meta.title) + '</div>' +
       '<div class="validate-pub-hint">' + escapeHtml(meta.hint) + '</div>' +
+      (tree.confidence === 'exact' ? '<div class="validate-confidence validate-confidence--exact">Exact index match</div>' : '') +
       '</div></div>';
-    if(meta.bb) html += linkRow('Building Blocks', tree.buildingBlocksUrl, 'Open Building Blocks');
-    if(meta.root) html += linkRow('Root/Page Level', tree.rootPageLevelUrl, 'Open Root / page level');
-    let note = tree.note;
-    if(note && !meta.root && /root\/page/i.test(note)) note = null;
-    if(note && !meta.bb && /building blocks/i.test(note)) note = null;
-    if(note){
-      html += '<p class="validate-note">' + escapeHtml(note) + '</p>';
+    if(meta.bb && tree.buildingBlocksUrl) html += linkRow('Building Blocks', tree.buildingBlocksUrl, 'Open Building Blocks');
+    if(meta.root && tree.rootPageLevelUrl) html += linkRow('Root/Page Level', tree.rootPageLevelUrl, 'Open Root / page level');
+    if(tree.candidates && tree.candidates.length){
+      html += '<div class="validate-candidates-head">Search matches</div>';
+      html += '<ul class="validate-candidates">';
+      tree.candidates.forEach((c) => {
+        const mark = c.exact ? '<span class="validate-candidate-exact" title="Exact match">✓</span> ' : '';
+        html += '<li class="validate-candidate' + (c.exact ? ' validate-candidate--exact' : '') + '">' +
+          mark +
+          '<a class="validate-link-href validate-candidate-link" href="' + escapeHtml(c.explorerUrl) + '" target="_blank" rel="noopener">' + escapeHtml(c.name) + '</a>' +
+          '<span class="validate-candidate-path">' + escapeHtml(c.folderPath) + '</span>' +
+          '</li>';
+      });
+      html += '</ul>';
+    }
+    if(tree.note){
+      html += '<p class="validate-note">' + escapeHtml(tree.note) + '</p>';
     }
     html += '</div>';
     return html;
@@ -760,7 +739,7 @@
   async function resolveUrl(raw){
     const coerced = coerceDiningInput(raw);
     const out = document.getElementById('validateResults');
-    if(out) out.innerHTML = '<div class="loading-wrap"><div class="spinner"></div>Resolving&hellip;</div>';
+    if(out) out.innerHTML = '<div class="loading-wrap"><div class="spinner"></div>Resolving&hellip;<div class="validate-resolve-hint">Entertainment or missing index rows may take up to 15s while offline crawl runs once.</div></div>';
     try{
       const res = await fetch('/api/dining/resolve?url=' + encodeURIComponent(coerced));
       let data;

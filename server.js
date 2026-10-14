@@ -503,6 +503,15 @@ server.listen(PORT, BIND_HOST, () => {
     diningOk = true;
   } catch (_) {}
   console.log('  Validate:  ' + (diningOk ? '/api/dining/resolve ready' : 'MISSING — git pull + restart'));
+  if (diningOk) {
+    try {
+      const cp = require('./scripts/dscribe/dscribe-crawl-search.js').crawlPath();
+      console.log(
+        '  Validate crawl: ' +
+          (cp ? 'offline search enabled (DSCRIBE_DATA)' : 'set DSCRIBE_DATA in .env for entertainment fallback')
+      );
+    } catch (_) {}
+  }
   if(cfg0.missing.length){
     console.log('  WARNING: missing ' + cfg0.missing.join(', ') + ' in .env');
     return;

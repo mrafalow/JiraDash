@@ -60,8 +60,7 @@ function hasIndexedFacilityDepth(result) {
   const e065 = result && result.evo065;
   if (e065 && typeof e065.pageChainDepth === 'number' && e065.pageChainDepth > 0) return true;
   const e040 = result && result.evo040;
-  if (e040 && e040.bbOpensPubId === '472') return true;
-  if (e040 && e040.buildingBlocksUrl && /\/0-472-1_/.test(e040.buildingBlocksUrl)) return true;
+  if (e040 && e040.buildingBlocksUrl && /\/0-281-1_tcm:281-1-2_tcm:281-\d+-/.test(e040.buildingBlocksUrl)) return true;
   if (e065 && e065.buildingBlocksUrl && /\/0-934-1_.+934-\d+-/.test(e065.buildingBlocksUrl)) return true;
   return false;
 }
