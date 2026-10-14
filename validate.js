@@ -456,7 +456,18 @@
     if(meta.bb && tree.buildingBlocksUrl) html += linkRow('Building Blocks', tree.buildingBlocksUrl, 'Open Building Blocks');
     if(meta.root && tree.rootPageLevelUrl) html += linkRow('Root/Page Level', tree.rootPageLevelUrl, 'Open Root / page level');
     if(tree.candidates && tree.candidates.length){
-      html += '<div class="validate-candidates-head">Search matches</div>';
+      const candCount = tree.candidates.length;
+      const exactCount = tree.candidates.filter((c) => c.exact).length;
+      const countHint = exactCount
+        ? candCount + ' matches · ' + exactCount + ' exact'
+        : candCount + (candCount === 1 ? ' match' : ' matches');
+      html += '<details class="validate-candidates-details">';
+      html += '<summary class="validate-candidates-summary">' +
+        '<svg class="chevron validate-candidates-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">' +
+        '<path d="M9 6l6 6-6 6"/></svg>' +
+        '<span class="validate-candidates-summary-label">Search matches</span>' +
+        '<span class="validate-candidates-count">' + escapeHtml(countHint) + '</span>' +
+        '</summary>';
       html += '<ul class="validate-candidates">';
       tree.candidates.forEach((c) => {
         const mark = c.exact ? '<span class="validate-candidate-exact" title="Exact match">✓</span> ' : '';
@@ -466,7 +477,7 @@
           '<span class="validate-candidate-path">' + escapeHtml(c.folderPath) + '</span>' +
           '</li>';
       });
-      html += '</ul>';
+      html += '</ul></details>';
     }
     if(tree.note){
       html += '<p class="validate-note">' + escapeHtml(tree.note) + '</p>';
