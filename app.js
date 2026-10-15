@@ -126,11 +126,20 @@ function renderMsStallCard(t){
   '</div>';
 }
 
+function quickReviewStageBadgeHtml(pr){
+  const type = pr && pr.type;
+  if(type === 'ALTTEXT'){
+    return '<span class="score-badge-label score-badge-label--stack" aria-label="Alt Text">' +
+      '<span>Alt</span><span>Text</span></span>';
+  }
+  const label = (type && (STAGE_LABELS[type] || type)) || 'PR';
+  return escapeHtml(label);
+}
+
 /** Quick-review card — open subtask assigned to you; light gray band (same as PR). */
 function renderPrReviewCard({t, pr}){
   const reason = prReviewReason(pr);
   const dueLabel = prReviewDueLabel(pr);
-  const stageBadge = (pr && pr.type && (STAGE_LABELS[pr.type] || pr.type)) || 'PR';
   const bandColor = 'var(--band-pr)';
   const bandBg = 'var(--band-pr-bg)';
   const priorityShort = (t.priority || '').replace(/^\d+ - /,'');
@@ -163,7 +172,7 @@ function renderPrReviewCard({t, pr}){
   return '<div class="ticket-card pr-review-card'+(isExpanded?' expanded':'')+(isManagedServicesTicket(t)?' ms-ticket':'')+'" style="--band-color:'+bandColor+'" data-key="'+escapeAttr(t.key)+'" data-pr-review="1">' +
     '<div class="ticket-row" data-toggle="'+escapeAttr(t.key)+'">' +
       '<div class="score-stack">' +
-        '<div class="score-badge" style="background:'+bandBg+';color:'+bandColor+'" title="Quick review — 1-day SLA">'+escapeHtml(stageBadge)+'</div>' +
+        '<div class="score-badge" style="background:'+bandBg+';color:'+bandColor+'" title="Quick review — 1-day SLA">'+quickReviewStageBadgeHtml(pr)+'</div>' +
         '<span class="pr-badge" title="Subtask assigned to you for quick review">Review</span>' +
         msBadgeHtml(t) +
       '</div>' +
