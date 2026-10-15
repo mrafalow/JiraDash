@@ -521,13 +521,42 @@
     return html;
   }
 
+  const VALIDATE_D_STATES = ['idle', 'loading', 'match', 'search', 'fail'];
+  const VALIDATE_D_LABELS = {
+    idle: 'Paste a prod URL to resolve',
+    loading: 'Resolving URL',
+    match: 'Resolved — index match',
+    search: 'Resolved — search matches',
+    fail: 'Resolve failed'
+  };
+
+  function classifyValidateOutcome(data){
+    if(!data || data.ok !== true) return 'fail';
+    const hasSearchMatches = VALIDATE_PUB_ORDER.some((k) => {
+      const t = data[k];
+      return t && Array.isArray(t.candidates) && t.candidates.length > 0;
+    });
+    return hasSearchMatches ? 'search' : 'match';
+  }
+
+  function setValidateDIndicator(state){
+    const el = document.getElementById('validateDIndicator');
+    if(!el) return;
+    const next = VALIDATE_D_STATES.includes(state) ? state : 'idle';
+    VALIDATE_D_STATES.forEach((s) => el.classList.remove('validate-d-indicator--' + s));
+    el.classList.add('validate-d-indicator--' + next);
+    el.setAttribute('aria-label', VALIDATE_D_LABELS[next] || VALIDATE_D_LABELS.idle);
+  }
+
   function renderResult(data){
     const out = document.getElementById('validateResults');
     if(!out) return;
     if(!data.ok){
+      setValidateDIndicator('fail');
       out.innerHTML = '<div class="error-box">' + escapeHtml(data.error || 'Could not resolve URL.') + '</div>';
       return;
     }
+    setValidateDIndicator(classifyValidateOutcome(data));
     lastResult = data;
     let html = '<section class="panel-block validate-results">';
     html += '<div class="section-title">RESOLVED</div>';
@@ -749,6 +778,7 @@
 
   async function resolveUrl(raw){
     const coerced = coerceDiningInput(raw);
+    setValidateDIndicator('loading');
     const out = document.getElementById('validateResults');
     if(out) out.innerHTML = '<div class="loading-wrap"><div class="spinner"></div>Resolving&hellip;<div class="validate-resolve-hint">Entertainment or missing index rows may take up to 15s while offline crawl runs once.</div></div>';
     try{
@@ -900,9 +930,9 @@
     if(validateBound) return;
     validateBound = true;
     const input = document.getElementById('validateUrlInput');
-    const btn = document.getElementById('validateResolveBtn');
-    if(!input || !btn) return;
+    if(!input) return;
 
+    setValidateDIndicator('idle');
     refreshDscribeSessionStatus();
     const saveBtn = document.getElementById('validateDscribeSaveBtn');
     const clearBtn = document.getElementById('validateDscribeClearBtn');
@@ -920,7 +950,6 @@
     function run(){
       resolveUrl(input.value);
     }
-    btn.addEventListener('click', run);
     input.addEventListener('keydown', (e) => {
       if(e.key === 'Enter') run();
     });
@@ -928,6 +957,9 @@
       setTimeout(() => {
         if(shouldAutoResolve(input.value)) run();
       }, 0);
+    });
+    input.addEventListener('input', () => {
+      if(!input.value.trim()) setValidateDIndicator('idle');
     });
     const resultsRoot = document.getElementById('validateResults');
     if(resultsRoot) bindValidateCopyChips(resultsRoot);

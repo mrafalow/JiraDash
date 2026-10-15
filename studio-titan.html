@@ -129,7 +129,9 @@
         </div>
         <div class="validate-input-row">
           <input type="url" id="validateUrlInput" class="validate-url-input" placeholder="https://disneyworld.disney.go.com/dining/…" spellcheck="false" autocomplete="off">
-          <button type="button" class="refresh-btn" id="validateResolveBtn">Resolve</button>
+          <div class="validate-d-indicator validate-d-indicator--idle" id="validateDIndicator" role="status" aria-live="polite" aria-label="Paste a prod URL to resolve">
+            <span class="validate-d-indicator__letter" aria-hidden="true">D</span>
+          </div>
         </div>
       </section>
       <div id="validateResults"></div>
