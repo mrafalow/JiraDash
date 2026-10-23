@@ -88,7 +88,8 @@ function escapeAttr(s){ return escapeHtml(s).replace(/"/g, '&quot;'); }
 function soloSourceTickets(){
   const active = (STATE.data && STATE.data.activeTickets) || [];
   const ms = (STATE.data && STATE.data.msSoloTickets) || [];
-  return active.concat(ms);
+  const filtered = active.filter((t) => !isLaunchProgramTicket(t));
+  return filtered.concat(ms);
 }
 
 function msBadgeHtml(ticket){
@@ -440,6 +441,7 @@ function horizonSourceTickets(){
   const out = [];
   active.concat(content).forEach(t => {
     if(!t || !t.key || seen.has(t.key)) return;
+    if(isLaunchProgramTicket(t)) return;
     seen.add(t.key);
     out.push(t);
   });
@@ -1537,6 +1539,7 @@ async function loadAll(spinning){
     renderCopy();
     renderMedia();
     renderAlttext();
+    renderLaunchList();
     updateTeamNavAvailability();
   } catch(err){
     document.getElementById('ticketList').innerHTML =
@@ -1667,6 +1670,10 @@ document.querySelectorAll('.nav-item[data-view]').forEach(el => {
     setView('viewAlttext', view === 'alttext');
     setView('viewConfig', view === 'config');
     setView('viewValidate', view === 'validate');
+    setView('viewLaunches', view === 'launches');
+    if(view === 'launches' && typeof renderLaunchList === 'function'){
+      renderLaunchList();
+    }
     if(view === 'validate' && typeof initValidateView === 'function'){
       initValidateView();
     }

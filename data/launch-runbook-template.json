@@ -1,0 +1,155 @@
+{
+  "launchTypes": {
+    "standardRestaurant": {
+      "label": "Standard restaurant (existing page)"
+    },
+    "diningEvent": {
+      "label": "Dining event / special experience"
+    },
+    "festival": {
+      "label": "Festival / multi-window validation"
+    }
+  },
+  "sections": [
+    {
+      "id": "ids",
+      "title": "IDs & inventory",
+      "rows": [
+        {
+          "id": "facility-id",
+          "label": "Facility / restaurant ID documented",
+          "appliesTo": ["standardRestaurant", "diningEvent"],
+          "help": "Use Nemo debugger / Bell sheet. Reference in Watcher when verifying meal periods."
+        },
+        {
+          "id": "meal-periods",
+          "label": "Meal period IDs verified (Watcher / stage)",
+          "appliesTo": ["standardRestaurant", "diningEvent"],
+          "help": "Bell team publishes meal plans; GCx verifies in stage before prod go-live."
+        },
+        {
+          "id": "event-id",
+          "label": "Event ID",
+          "appliesTo": ["diningEvent"],
+          "help": "Not used for standard restaurant pages."
+        }
+      ]
+    },
+    {
+      "id": "copy",
+      "title": "Copy & page",
+      "rows": [
+        {
+          "id": "initial-details",
+          "label": "Initial / full details content (if requester wants teaser)",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "optional": true,
+          "help": "Ask requester: content before bookings vs day-of only."
+        },
+        {
+          "id": "copy-bookings",
+          "label": "Copy updates for bookings launch",
+          "appliesTo": ["standardRestaurant", "diningEvent"],
+          "help": "e.g. remove brunch references; align with breakfast/lunch meal periods."
+        },
+        {
+          "id": "copy-service",
+          "label": "Copy / advisory updates for service start",
+          "appliesTo": ["standardRestaurant", "diningEvent"],
+          "optional": true,
+          "help": "May be no change; service-start ticket still tracks the date."
+        },
+        {
+          "id": "eec-list",
+          "label": "Enchanted Extra / EEC list updates",
+          "appliesTo": ["diningEvent"],
+          "help": "Not applicable to standard restaurant launches."
+        }
+      ]
+    },
+    {
+      "id": "dfm",
+      "title": "Down for maintenance (DFM)",
+      "requiresLaunchFlag": "needsDfm",
+      "rows": [
+        {
+          "id": "dfm-window",
+          "label": "DFM window scheduled and communicated",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "requiresLaunchFlag": "needsDfm",
+          "help": "Skip when the launch does not need a maintenance page (most standard restaurant meal-period changes)."
+        },
+        {
+          "id": "dfm-comms",
+          "label": "DFM lift / all-clear verified",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "requiresLaunchFlag": "needsDfm"
+        }
+      ]
+    },
+    {
+      "id": "wait-room",
+      "title": "Wait room",
+      "requiresLaunchFlag": "needsWaitRoom",
+      "rows": [
+        {
+          "id": "wait-room-setup",
+          "label": "Wait room configured (stage + prod)",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "requiresLaunchFlag": "needsWaitRoom",
+          "help": "Used for high-demand or complex launches; not expected for this profile."
+        },
+        {
+          "id": "wait-room-prod",
+          "label": "Wait room disabled after go-live",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "requiresLaunchFlag": "needsWaitRoom"
+        }
+      ]
+    },
+    {
+      "id": "stage",
+      "title": "Stage verification",
+      "rows": [
+        {
+          "id": "stage-meal-periods",
+          "label": "Stage: meal periods and menus render as expected",
+          "appliesTo": ["standardRestaurant", "diningEvent"],
+          "help": "Validate prod URL in stage; Bell/OPDM own menu publish."
+        },
+        {
+          "id": "stage-copy",
+          "label": "Stage: copy and page match runbook plan",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "help": "Complete before prod bookings launch."
+        }
+      ]
+    },
+    {
+      "id": "prod",
+      "title": "Prod go-live",
+      "rows": [
+        {
+          "id": "validation-tracker",
+          "label": "Validation tracker (festival windows)",
+          "appliesTo": ["festival"],
+          "help": "Not used for single-facility restaurant launches."
+        },
+        {
+          "id": "prod-bookings",
+          "label": "Prod bookings launch (~5am push)",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "milestoneKind": "bookings",
+          "help": "Maps to Jira Bookings Launch milestone ticket."
+        },
+        {
+          "id": "prod-service",
+          "label": "Prod service start",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "milestoneKind": "service",
+          "help": "First day guests can book / service available; maps to Service Start ticket."
+        }
+      ]
+    }
+  ]
+}
