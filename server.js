@@ -442,6 +442,77 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if(pathname === '/api/launch/config' && req.method === 'GET'){
+    try {
+      const { loadLaunchConfig } = require('./scripts/launch-data.js');
+      sendJson(res, 200, loadLaunchConfig());
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: String(err.message || err) });
+    }
+    return;
+  }
+
+  if(pathname === '/api/launch/runbook-live' && req.method === 'GET'){
+    const epicKey = (u.searchParams.get('epic') || '').trim();
+    const includeNa = (u.searchParams.get('includeNotApplicable') || '').trim() === '1';
+    const refresh = (u.searchParams.get('refresh') || '').trim() === '1';
+    if(!epicKey){
+      sendJson(res, 400, { ok: false, error: 'Missing epic query parameter.' });
+      return;
+    }
+    try {
+      const { loadLaunchConfig } = require('./scripts/launch-data.js');
+      const { fetchLiveRunbookForEpic } = require('./scripts/smartsheet-api.js');
+      const cfg = loadLaunchConfig();
+      const runbookConfig = (cfg.runbooks && cfg.runbooks[epicKey]) || null;
+      if(!runbookConfig){
+        sendJson(res, 404, { ok: false, error: 'Epic not in launch-runbooks.json: ' + epicKey });
+        return;
+      }
+      fetchLiveRunbookForEpic({
+        epicKey,
+        runbookConfig,
+        includeNotApplicable: includeNa,
+        refresh
+      }).then((result) => {
+        const code = result.ok ? 200 : result.statusCode === 401 || result.statusCode === 403 ? 401 : 502;
+        sendJson(res, code, result);
+      }).catch((err) => {
+        sendJson(res, 502, { ok: false, error: err && err.message ? err.message : String(err) });
+      });
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: String(err.message || err) });
+    }
+    return;
+  }
+
+  if(pathname === '/api/launch/progress'){
+    const { loadLaunchProgress, saveLaunchProgress } = require('./scripts/launch-data.js');
+    if(req.method === 'GET'){
+      sendJson(res, 200, loadLaunchProgress());
+      return;
+    }
+    if(req.method === 'POST'){
+      readRequestBody(req).then((buf) => {
+        let body = {};
+        if(buf && buf.length){
+          try { body = JSON.parse(buf.toString('utf8')); } catch (_) { body = {}; }
+        }
+        if(!body || typeof body !== 'object'){
+          sendJson(res, 400, { ok: false, error: 'Expected JSON object.' });
+          return;
+        }
+        saveLaunchProgress(body);
+        sendJson(res, 200, { ok: true });
+      }).catch((err) => {
+        sendJson(res, 400, { ok: false, error: err && err.message ? err.message : String(err) });
+      });
+      return;
+    }
+    sendJson(res, 405, { ok: false, error: 'Method not allowed' });
+    return;
+  }
+
   if(pathname === '/api/dining/resolve' && req.method === 'GET'){
     const { resolveDiningUrl } = require('./scripts/dscribe/dining-resolve.js');
     const raw = (u.searchParams.get('url') || '').trim();

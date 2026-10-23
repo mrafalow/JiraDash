@@ -1,0 +1,12 @@
+{
+  "comment": "Substring match (case-insensitive) on Smartsheet Task column → checklist row id. Used when Status is Not Applicable.",
+  "aliases": [
+    { "match": "validation tracker", "rowId": "validation-tracker" },
+    { "match": "event id", "rowId": "event-id" },
+    { "match": "eec", "rowId": "eec-list" },
+    { "match": "enchanted extra", "rowId": "eec-list" },
+    { "match": "dfm", "rowId": "dfm-window" },
+    { "match": "down for maintenance", "rowId": "dfm-window" },
+    { "match": "wait room", "rowId": "wait-room-setup" }
+  ]
+}

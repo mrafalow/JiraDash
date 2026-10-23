@@ -17,6 +17,8 @@ Paste or rotate the token on the `JIRA_API_TOKEN=` line. For Disney, set **`JIRA
 
 Optional: **`JIRA_USE_SITE_API=1`** skips the gateway entirely.
 
+**Launches tab (runbook):** per-epic config in `data/launch-runbooks.json`. **Live runbook** tab needs **`SMARTSHEET_ACCESS_TOKEN`** in `.env` — see **[docs/SMARTSHEET-LAUNCH.md](docs/SMARTSHEET-LAUNCH.md)**. Without a token, use **Open runbook** or CSV scripts: `sync-launch-runbook-dates.js` (milestone dates), `import-launch-runbook-tasks.js` (Not Applicable → checklist overrides).
+
 2. Install and run:
 
 ```bash

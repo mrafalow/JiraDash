@@ -47,7 +47,7 @@
       </div>
       <span class="label">Validate</span>
     </div>
-    <div class="nav-item disabled" data-view="launches" id="navLaunches" aria-disabled="true">
+    <div class="nav-item" data-view="launches" id="navLaunches">
       <div class="icon">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 19L19 5M10 5h9v9"/><path d="M5 12v7h7"/></svg>
       </div>
@@ -153,6 +153,14 @@
           <p class="validate-graph-legend" id="validateGraphLegend"></p>
         </div>
       </div>
+    </div>
+
+    <div id="viewLaunches" style="display:none;">
+      <section class="panel-block">
+        <div class="section-title">LAUNCHES &mdash; RUNBOOK PREP</div>
+        <p class="launch-page-hint">WDW launch epics (Epic + “Launch” in summary) with milestone child tickets. Use <strong>GCx checklist</strong> for Stage/Prod verification, or <strong>Live runbook</strong> (Smartsheet API — set <code>SMARTSHEET_ACCESS_TOKEN</code> in <code>.env</code>). N/A rows are hidden in the live view by default.</p>
+        <div id="launchList"><div class="loading-wrap"><div class="spinner"></div><span>Loading launches&hellip;</span></div></div>
+      </section>
     </div>
 
     <div id="viewHorizon" style="display:none;">
@@ -271,6 +279,7 @@
 <script src="translations-review.js"></script>
 <script src="jira.js"></script>
 <script src="validate.js"></script>
+<script src="launches.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

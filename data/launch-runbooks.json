@@ -1,0 +1,47 @@
+{
+  "WDW-191147": {
+    "title": "2027 Whispering Canyon Booking Launch",
+    "launchType": "standardRestaurant",
+    "runbookUrl": "https://app.smartsheet.com/sheets/RmWQ2CWJcfm7hFpcWwmfh6ccFpM9Rhrw49RXgVv1",
+    "smartsheetSheetId": "RmWQ2CWJcfm7hFpcWwmfh6ccFpM9Rhrw49RXgVv1",
+    "bellSheetUrl": null,
+    "facilityProdUrl": "https://disneyworld.disney.go.com/dining/resort-dining/wilderness-lodge/whispering-canyon-cafe/",
+    "facilityId": "2376",
+    "mealPeriodChange": {
+      "summary": "Eliminate brunch; introduce breakfast and lunch (two meal periods).",
+      "eliminate": ["brunch"],
+      "add": ["breakfast", "lunch"]
+    },
+    "mealPeriodIds": {
+      "breakfast": null,
+      "lunch": null
+    },
+    "bellSheetForm": {
+      "name": "Build Sheet with Form",
+      "rows": {
+        "breakfast": 123,
+        "lunch": 124
+      },
+      "note": "Meal period IDs live on those rows; paste into mealPeriodIds when Bell publishes."
+    },
+    "launchFlags": {
+      "needsDfm": false,
+      "needsWaitRoom": false
+    },
+    "plannedDates": {
+      "initialDetails": null,
+      "bookingsLaunch": null,
+      "serviceStart": null
+    },
+    "rowOverrides": {
+      "initial-details": { "applies": true },
+      "validation-tracker": { "applies": false },
+      "event-id": { "applies": false },
+      "eec-list": { "applies": false },
+      "dfm-window": { "applies": false },
+      "dfm-comms": { "applies": false },
+      "wait-room-setup": { "applies": false },
+      "wait-room-prod": { "applies": false }
+    }
+  }
+}
