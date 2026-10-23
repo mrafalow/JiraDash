@@ -211,9 +211,13 @@ function mapActiveTicket(issue, subtasksByParent, currentAccountId, fieldIds, co
   const assignee = mapAssignee(f, currentAccountId);
   const commentSignals = (commentSignalsByKey && commentSignalsByKey[issue.key])
     || analyzeCommentSignals([]);
+  const parentKey = f.parent && f.parent.key ? f.parent.key : null;
+  const issueType = (f.issuetype && f.issuetype.name) || '';
   return {
     key: issue.key,
     summary: f.summary || '',
+    issueType,
+    parentKey,
     priority: mapPriority(f),
     status: mapStatusName(f),
     assigneeName: assignee.assigneeName,
@@ -227,6 +231,98 @@ function mapActiveTicket(issue, subtasksByParent, currentAccountId, fieldIds, co
     subtasks,
     commentSignals
   };
+}
+
+function parseLaunchMilestoneKind(summary) {
+  const s = String(summary || '');
+  if (/bookings launch/i.test(s)) return 'bookings';
+  if (/service start/i.test(s)) return 'service';
+  return 'other';
+}
+
+function mapLaunchMilestone(issue, currentAccountId) {
+  const f = issue.fields || {};
+  const assignee = mapAssignee(f, currentAccountId);
+  return {
+    key: issue.key,
+    summary: f.summary || '',
+    status: mapStatusName(f),
+    dueDate: datePrefix(f.duedate),
+    milestoneKind: parseLaunchMilestoneKind(f.summary),
+    assigneeName: assignee.assigneeName,
+    assigneeIsCurrentUser: assignee.assigneeIsCurrentUser
+  };
+}
+
+function groupLaunchMilestonesByParent(issues, currentAccountId) {
+  const byParent = {};
+  for (const issue of issues) {
+    const parentKey = issue.fields && issue.fields.parent && issue.fields.parent.key;
+    if (!parentKey) continue;
+    if (!byParent[parentKey]) byParent[parentKey] = [];
+    byParent[parentKey].push(mapLaunchMilestone(issue, currentAccountId));
+  }
+  return byParent;
+}
+
+async function fetchLaunchMilestonesForEpics(epicKeys, currentAccountId) {
+  if (!epicKeys.length) return {};
+  const chunks = [];
+  for (let i = 0; i < epicKeys.length; i += 40) chunks.push(epicKeys.slice(i, i + 40));
+  const all = [];
+  for (const chunk of chunks) {
+    const jql = 'parent in (' + chunk.join(',') + ')';
+    const fields = ['summary', 'status', 'assignee', 'created', 'duedate', 'parent'];
+    const issues = await jiraSearch(jql, fields, 200);
+    all.push(...issues);
+  }
+  return groupLaunchMilestonesByParent(all, currentAccountId);
+}
+
+function isLaunchEpicTicket(ticket, allowlist) {
+  if (!ticket || !ticket.key) return false;
+  const list = allowlist || [];
+  if (list.includes(ticket.key)) return true;
+  const type = String(ticket.issueType || '');
+  const summary = String(ticket.summary || '');
+  return type === 'Epic' && /launch/i.test(summary);
+}
+
+function buildLaunchEpics(activeTickets, milestonesByParent, allowlist, runbooks) {
+  const epics = (activeTickets || []).filter((t) => isLaunchEpicTicket(t, allowlist));
+  return epics.map((epic) => {
+    const config = (runbooks && runbooks[epic.key]) || {};
+    const milestones = (milestonesByParent && milestonesByParent[epic.key]) || [];
+    milestones.sort((a, b) => {
+      const order = { bookings: 0, service: 1, other: 2 };
+      return (order[a.milestoneKind] ?? 2) - (order[b.milestoneKind] ?? 2);
+    });
+    return {
+      key: epic.key,
+      summary: epic.summary,
+      status: epic.status,
+      dueDate: epic.dueDate,
+      assigneeName: epic.assigneeName,
+      launchType: config.launchType || 'standardRestaurant',
+      config,
+      milestones
+    };
+  });
+}
+
+function enrichLaunchFlags(activeTickets, launchEpics) {
+  const epicKeys = new Set((launchEpics || []).map((e) => e.key));
+  const milestoneKeys = new Set();
+  (launchEpics || []).forEach((e) => {
+    (e.milestones || []).forEach((m) => {
+      if (m.key) milestoneKeys.add(m.key);
+    });
+  });
+  (activeTickets || []).forEach((t) => {
+    t.isLaunchEpic = epicKeys.has(t.key);
+    t.isLaunchMilestone =
+      milestoneKeys.has(t.key) || (t.parentKey && epicKeys.has(t.parentKey));
+  });
 }
 
 function mapClosedTicket(issue, subtasksByParent, currentAccountId){
@@ -739,8 +835,16 @@ async function fetchJiraData(){
   const parentFields = [
     'summary','priority','duedate','created','status','description',
     fieldIds.publishEarlyField, fieldIds.partnerField,
-    'resolutiondate','assignee','reporter'
+    'resolutiondate','assignee','reporter','issuetype','parent'
   ];
+
+  let launchMeta = { allowlist: [], runbooks: {}, template: { sections: [] } };
+  try {
+    const lr = await fetch('/api/launch/config');
+    if (lr.ok) launchMeta = await lr.json();
+  } catch (_) {
+    /* defaults */
+  }
 
   let activeIssues;
   try{
@@ -804,17 +908,33 @@ async function fetchJiraData(){
     || (prReviewResult && prReviewResult.commentsWarning)
     || null;
 
+  const activeTickets = activeIssues.map(i =>
+    mapActiveTicket(i, activeSubs, currentAccountId, fieldIds, commentSignalsByKey)
+  );
+  const launchEpicKeys = activeTickets
+    .filter((t) => isLaunchEpicTicket(t, launchMeta.allowlist))
+    .map((t) => t.key);
+  const milestonesByParent = await fetchLaunchMilestonesForEpics(launchEpicKeys, currentAccountId);
+  const launchEpics = buildLaunchEpics(
+    activeTickets,
+    milestonesByParent,
+    launchMeta.allowlist,
+    launchMeta.runbooks
+  );
+  enrichLaunchFlags(activeTickets, launchEpics);
+
   return {
     currentUserFirstName,
-    activeTickets: activeIssues.map(i => mapActiveTicket(i, activeSubs, currentAccountId, fieldIds, commentSignalsByKey)),
+    activeTickets,
     recentlyClosedTickets: closedIssues.map(i => mapClosedTicket(i, closedSubs, currentAccountId)),
     contentTickets: contentResult.tickets || [],
     contentJql: contentResult.jql || DEFAULT_CONTENT_JQL,
     msSoloTickets: (msSoloResult && msSoloResult.tickets) || [],
-    // Parents with an open PR assigned to me that active/msSolo did not already cover.
     prReviewTickets: (prReviewResult && prReviewResult.tickets) || [],
-    // All open PR subtask keys assigned to me (incl. parents already on the board).
     prSubtaskKeys: (prReviewResult && prReviewResult.prSubtaskKeys) || [],
+    launchEpics,
+    launchTemplate: launchMeta.template || { sections: [] },
+    launchRunbooks: launchMeta.runbooks || {},
     commentsWarning
   };
 }

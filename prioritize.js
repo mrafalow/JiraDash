@@ -716,6 +716,10 @@ function collectPrReviewTickets(tickets, data){
   });
 }
 
+function isLaunchProgramTicket(t){
+  return !!(t && (t.isLaunchEpic || t.isLaunchMilestone));
+}
+
 /** In Focus ticket pool for quick-review lane (incl. CONTENT parents not yet MS Solo). */
 function prReviewSourceTickets(data){
   const out = [];
@@ -723,6 +727,7 @@ function prReviewSourceTickets(data){
   function add(list){
     (list || []).forEach(t => {
       if(!t || !t.key || seen.has(t.key)) return;
+      if(isLaunchProgramTicket(t)) return;
       seen.add(t.key);
       out.push(t);
     });
