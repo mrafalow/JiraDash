@@ -9,6 +9,18 @@
     lgcy065: { id: '914', structureSourcePub: '627' }
   };
   const LOCALES = ['es-us','en_CA','fr-ca','es-ar','es-mx','es-pe','es-co','es-cl','pt-br'];
+  const VALIDATE_URL_ANCHORS = ['dining','entertainment','destinations','events','things-to-do'];
+  function findUrlAnchor(segments){
+    for(let i = 0; i < VALIDATE_URL_ANCHORS.length; i++){
+      const anchor = VALIDATE_URL_ANCHORS[i];
+      const idx = segments.indexOf(anchor);
+      if(idx >= 0) return { anchorIdx: idx, section: anchor, contentKind: anchor };
+    }
+    return null;
+  }
+  function validatePathHint(){
+    return VALIDATE_URL_ANCHORS.map((a) => '/' + a + '/').join(', ');
+  }
   const ROOT = '3-4';
   const BB = '1-2';
   function explorerContainerUrl(pubId, segs) {
@@ -69,18 +81,17 @@
     if(!trimmed) return { error: 'Paste a URL first.' };
     let u;
     try { u = new URL(trimmed); } catch (_) { return { error: 'Invalid URL.' }; }
-    if(!u.hostname.toLowerCase().includes('disney.go.com')) return { error: 'Expected a disney.go.com URL (WDW dining or entertainment).' };
+    if(!u.hostname.toLowerCase().includes('disney.go.com')) return { error: 'Expected a disney.go.com URL (WDW content path).' };
     u.search = ''; u.hash = '';
     u.hostname = stripEnv(u.hostname);
     let path = u.pathname;
     if(!path.endsWith('/')) path += '/';
     let segments = stripLeadingLocaleSegments(path.split('/').filter(Boolean));
-    const di = segments.indexOf('dining');
-    const ei = segments.indexOf('entertainment');
-    const anchor = di >= 0 ? di : ei;
-    if(anchor < 0) return { error: 'URL path should include /dining/… or /entertainment/…' };
-    const section = segments[anchor];
-    const contentKind = di >= 0 ? 'dining' : 'entertainment';
+    const found = findUrlAnchor(segments);
+    if(!found) return { error: 'URL path should include one of: ' + validatePathHint() };
+    const anchor = found.anchorIdx;
+    const section = found.section;
+    const contentKind = found.contentKind;
     const after = segments.slice(anchor + 1);
     if(!after.length) return { error: 'Missing slug after /' + section + '/.' };
     const slug = after[after.length - 1];
@@ -334,8 +345,9 @@
     if(indexSlug !== norm.slug){
       warnings.push('URL slug “' + norm.slug + '” mapped to CMS index slug “' + indexSlug + '”.');
     }
-    if(norm.contentKind === 'entertainment'){
-      warnings.push('Entertainment URL — D-Scribe links use dining index data when the CMS slug matches.');
+    if(norm.contentKind && norm.contentKind !== 'dining'){
+      const label = norm.contentKind === 'things-to-do' ? 'Things to do' : norm.contentKind.charAt(0).toUpperCase() + norm.contentKind.slice(1);
+      warnings.push(label + ' URL — D-Scribe links use dining index data when the CMS slug matches; otherwise use session search.');
     }
     if(!entry){
       warnings.push('Slug not found in dining index — showing title from URL only. Rebuild data/dining-slug-index.json from crawl.');
@@ -640,15 +652,25 @@
     }).catch(() => {});
   }
 
-  function coerceDiningInput(raw){
+  function coerceValidateInput(raw){
     const t = String(raw || '').trim();
     if(!t) return t;
     if(/^https?:\/\//i.test(t)) return t;
     let path = t.replace(/^\/+/, '');
-    if(path.indexOf('dining/') !== 0 && path.indexOf('dining/') === -1){
+    let anchorIdx = -1;
+    let anchor = '';
+    for(let i = 0; i < VALIDATE_URL_ANCHORS.length; i++){
+      const a = VALIDATE_URL_ANCHORS[i];
+      const pos = path.indexOf(a + '/');
+      if(pos >= 0 && (anchorIdx < 0 || pos < anchorIdx)){
+        anchorIdx = pos;
+        anchor = a;
+      }
+    }
+    if(anchorIdx >= 0){
+      path = path.slice(anchorIdx);
+    } else {
       path = 'dining/' + path;
-    } else if(path.indexOf('dining/') > 0){
-      path = path.slice(path.indexOf('dining/'));
     }
     if(!path.endsWith('/')) path += '/';
     return 'https://disneyworld.disney.go.com/' + path;
@@ -658,7 +680,9 @@
     const v = String(value || '').trim();
     if(v.length < 10) return false;
     if(/disney\.go\.com/i.test(v)) return true;
-    return /dining\/[^/]+\/[^/]+/.test(v.replace(/^\/+/, ''));
+    const p = v.replace(/^\/+/, '');
+    const anchorPat = VALIDATE_URL_ANCHORS.map((a) => a.replace(/-/g, '\\-')).join('|');
+    return new RegExp('(?:' + anchorPat + ')\\/[^/]+\\/[^/]+').test(p);
   }
 
   function loadScriptOnce(src){
@@ -719,7 +743,7 @@
   }
 
   async function resolveInBrowser(raw){
-    const coerced = coerceDiningInput(raw);
+    const coerced = coerceValidateInput(raw);
     await ensureResolverModules();
     let entries = {};
     let lgcySlots = {};
@@ -777,7 +801,7 @@
   }
 
   async function resolveUrl(raw){
-    const coerced = coerceDiningInput(raw);
+    const coerced = coerceValidateInput(raw);
     setValidateDIndicator('loading');
     const out = document.getElementById('validateResults');
     if(out) out.innerHTML = '<div class="loading-wrap"><div class="spinner"></div>Resolving&hellip;<div class="validate-resolve-hint">Entertainment or missing index rows may take up to 15s while offline crawl runs once.</div></div>';

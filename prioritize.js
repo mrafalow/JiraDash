@@ -748,7 +748,7 @@ const BLOCKER_WHY = {
   PR: 'Peer review pending',
   WF: 'Workflow unlock pending',
   PRODVAL: 'Prod validation pending',
-  TRANSLATIONS: 'Translations pending'
+  TRANSLATIONS: 'In progress'
 };
 
 function isOpenStageWithOtherAssignee(model){
@@ -884,6 +884,124 @@ function dueLabelFromScoring(scoring){
   return dueLabel;
 }
 
+/** Pipe summaries: Confidential | WDW | Dine | {park} | {location} | Content Updates */
+const NUDGE_PRODUCT_LINE = /^(dine|entertainment|eec|destinations|content)$/i;
+const NUDGE_WORK_TYPE_TAIL = /^(content updates?|content changes?|launch updates?|updates?)$/i;
+const NUDGE_PARK_HINT = /park|magic kingdom|epcot|hollywood|animal kingdom|disney springs|boardwalk|resort/i;
+
+function formatParkShort(park){
+  return String(park || '').replace(/\s+Park\s*$/i, '').trim();
+}
+
+function locationFromSummary(summary){
+  const raw = String(summary || '').trim();
+  if(!raw) return { location: 'this location', parkShort: '' };
+  if(raw.indexOf('|') < 0) return { location: raw, parkShort: '' };
+
+  let parts = raw.split('|').map(s => s.trim()).filter(Boolean);
+  parts = parts.filter(p => !/^confidential$/i.test(p) && !/^wdw$/i.test(p) && !/^dlr$/i.test(p));
+  parts = parts.filter(p => !NUDGE_PRODUCT_LINE.test(p));
+
+  let location = '';
+  let parkShort = '';
+  if(parts.length >= 2 && NUDGE_WORK_TYPE_TAIL.test(parts[parts.length - 1])){
+    location = parts[parts.length - 2];
+    if(parts.length >= 3 && NUDGE_PARK_HINT.test(parts[parts.length - 3])){
+      parkShort = formatParkShort(parts[parts.length - 3]);
+    }
+  } else if(parts.length){
+    location = parts[parts.length - 1];
+    if(parts.length >= 2 && NUDGE_PARK_HINT.test(parts[parts.length - 2])){
+      parkShort = formatParkShort(parts[parts.length - 2]);
+    }
+  }
+  if(!location) location = raw;
+  return { location, parkShort };
+}
+
+function locationPhraseFromSummary(summary){
+  const loc = locationFromSummary(summary);
+  if(loc.parkShort) return loc.location + ' (' + loc.parkShort + ')';
+  return loc.location;
+}
+
+function askForStage(type){
+  const map = {
+    RA: 'approve the RA',
+    COPY: 'finish copy',
+    MEDIA: 'provide media/assets',
+    ALTTEXT: 'complete alt text',
+    PR: 'complete peer review',
+    WF: 'unlock workflow',
+    PRODVAL: 'complete prod validation',
+    TRANSLATIONS: 'complete translations'
+  };
+  return map[type] || 'take the next step on this ticket';
+}
+
+function nudgeDeadlinePhrase(subDueDate, reasons){
+  if(!subDueDate) return null;
+  const today = todayMid();
+  const fmt = fmtDate(subDueDate);
+  const days = businessDaysBetween(today, atMidnight(subDueDate));
+  if(reasons && reasons.indexOf('subtask_overdue') >= 0){
+    return { text: 'was due ' + fmt, overdue: true };
+  }
+  if(days === 0) return { text: 'by end of day today (' + fmt + ')', overdue: false };
+  if(days === 1) return { text: 'by tomorrow (' + fmt + ')', overdue: false };
+  return { text: 'by ' + fmt, overdue: false };
+}
+
+function nudgeParentTrackPhrase(parentDueFmt){
+  if(!parentDueFmt || parentDueFmt === '—') return '';
+  return ' That keeps us on track for the ' + parentDueFmt + ' parent due date.';
+}
+
+function nudgeKeySuffix(ticketKey){
+  return ticketKey ? ' ' + ticketKey + '. Thank you.' : ' Thank you.';
+}
+
+function buildSubtaskNudgeText(opts){
+  const first = opts.first;
+  const ask = askForStage(opts.stageType);
+  const loc = opts.locPhrase;
+  const key = nudgeKeySuffix(opts.ticketKey);
+  const parentTrack = nudgeParentTrackPhrase(opts.parentDueFmt);
+  const dl = nudgeDeadlinePhrase(opts.subDueDate, opts.reasons);
+  const sig = opts.sig;
+
+  if(sig && sig.waitingOnImages){
+    const when = dl && !dl.overdue ? ' ' + dl.text : ' as soon as you can';
+    return 'Hi ' + first + ', for ' + loc + ', we still need images/assets before Media can finish. Could you also ' +
+      ask + when + '?' + parentTrack + key;
+  }
+  if(sig && sig.dateAdjusted){
+    return 'Hi ' + first + ', for ' + loc + ', the due date was adjusted. Could you ' + ask +
+      (opts.parentDueFmt && opts.parentDueFmt !== '—' ? ' so we stay on track for the ' + opts.parentDueFmt + ' parent due date' : '') +
+      '?' + key;
+  }
+  if(dl && dl.overdue){
+    let msg = 'Hi ' + first + ', ' + ask + ' for ' + loc + ' ' + dl.text + ' and we\'re still blocked. Could you take a look as soon as you can?';
+    if(opts.parentDueFmt && opts.parentDueFmt !== '—') msg += ' Parent is due ' + opts.parentDueFmt + '.';
+    return msg + key;
+  }
+  const when = dl ? ' ' + dl.text : '';
+  return 'Hi ' + first + ', could you ' + ask + ' for ' + loc + when + '?' + parentTrack + key;
+}
+
+function buildPartnerAssetsNudgeText(first, locPhrase, ticketKey, parentDueFmt, sig){
+  const dl = parentDueFmt && parentDueFmt !== '—' ? ' by ' + parentDueFmt : '';
+  let msg = 'Hi ' + first + ', could you share images/assets for ' + locPhrase + dl + ' so we can move to Media?';
+  if(sig && sig.dateAdjusted) msg = 'Hi ' + first + ', the due date was adjusted. Could you share images/assets for ' + locPhrase + dl + ' so we can move to Media?';
+  return msg + nudgeKeySuffix(ticketKey);
+}
+
+function buildCommentWaitNudgeText(first, locPhrase, focus, ticketKey, parentDueFmt){
+  const due = parentDueFmt && parentDueFmt !== '—' ? ' by ' + parentDueFmt : '';
+  return 'Hi ' + first + ', for ' + locPhrase + ', we\'re still waiting on ' + focus + due +
+    '. Could you share an ETA?' + nudgeKeySuffix(ticketKey);
+}
+
 /**
  * Ready-to-send Waiting nudge payload for a ticket already in the waiting lane.
  * Returns null when the ticket is not blocked on someone else.
@@ -895,6 +1013,7 @@ function buildWaitingNudge(ticket, model, scoring){
   const dueLabel = dueLabelFromScoring(scoring);
   const dueFmt = fmtDate(ticket.dueDate);
   const summary = (ticket.summary || '').trim() || ticket.key;
+  const locPhrase = locationPhraseFromSummary(summary);
   const sig = commentSignalsOf(ticket);
 
   // Partner owes assets — prefer Partner-oriented nudge over Media subtask assignee.
@@ -903,10 +1022,7 @@ function buildWaitingNudge(ticket, model, scoring){
     const first = firstNameFromDisplay(partnerName);
     let why = 'Waiting on images/assets from Partner before Media handoff';
     if(sig && sig.dateAdjusted) why += ' · due date adjusted';
-    const dateBit = (sig && sig.dateAdjusted) ? ' Date was adjusted.' : '';
-    const nudgeText = 'Hi ' + first + ' — gentle nudge: still waiting on images/assets for "' +
-      summary + '" (' + ticket.key + ').' + dateBit + ' Due ' + dueFmt +
-      '. Any ETA before we hand off to Media? Thanks!';
+    const nudgeText = buildPartnerAssetsNudgeText(first, locPhrase, ticket.key, dueFmt, sig);
     return {
       blockerType: 'Partner assets',
       blockerWhy: why,
@@ -935,18 +1051,16 @@ function buildWaitingNudge(ticket, model, scoring){
     const today = todayMid();
     const openDays = st.createdDate != null ? businessDaysBetween(atMidnight(st.createdDate), today) : null;
     const first = firstNameFromDisplay(st.assigneeName);
-    const openBit = openDays != null ? ' (open ' + openDays + 'd)' : '';
-    const subDueFmt = st.dueDate ? fmtDate(st.dueDate) : dueFmt;
-    // Collaborator-facing copy: Jira due only — never Config expected-by.
-    let nudgeText = 'Hi ' + first + ' — gentle nudge on ' + blockerType + ' for "' + summary +
-      '" (' + ticket.key + ')' + openBit + '. Subtask due ' + subDueFmt + '; parent due ' + dueFmt + '. Any ETA? Thanks!';
-    if(sig && sig.waitingOnImages){
-      nudgeText = 'Hi ' + first + ' — gentle nudge on ' + blockerType + ' for "' + summary +
-        '" (' + ticket.key + ')' + openBit + '. Still waiting on images/assets. Subtask due ' + subDueFmt + '. Any ETA? Thanks!';
-    } else if(sig && sig.dateAdjusted){
-      nudgeText = 'Hi ' + first + ' — gentle nudge on ' + blockerType + ' for "' + summary +
-        '" (' + ticket.key + ')' + openBit + '. Due date was adjusted — parent due ' + dueFmt + '. Any ETA? Thanks!';
-    }
+    const nudgeText = buildSubtaskNudgeText({
+      first,
+      stageType: type,
+      locPhrase,
+      ticketKey: ticket.key,
+      subDueDate: st.dueDate || null,
+      reasons,
+      parentDueFmt: dueFmt,
+      sig
+    });
     return {
       blockerType,
       blockerWhy,
@@ -978,9 +1092,7 @@ function buildWaitingNudge(ticket, model, scoring){
   }
   const who = ticket.partner || 'there';
   const first = firstNameFromDisplay(who);
-  const dateBit = (sig && sig.dateAdjusted) ? ' Date was adjusted.' : '';
-  const nudgeText = 'Hi ' + first + ' — gentle nudge: still waiting on ' + nudgeFocus + ' for "' +
-    summary + '" (' + ticket.key + ').' + dateBit + ' Due ' + dueFmt + '. Any ETA? Thanks!';
+  const nudgeText = buildCommentWaitNudgeText(first, locPhrase, nudgeFocus, ticket.key, dueFmt);
 
   return {
     blockerType,
@@ -1074,7 +1186,14 @@ function runPrioritizeFixtures(){
     fail('MS solo: RA close expectedBy should remain day0+RA_CLOSE_BY');
   }
 
-  return { ok: true, cases: 4 };
+  const loc = locationFromSummary(
+    'Confidential | WDW | Dine | Magic Kingdom Park | Columbia Harbour House | Content Updates'
+  );
+  if(loc.location !== 'Columbia Harbour House' || loc.parkShort !== 'Magic Kingdom'){
+    fail('locationFromSummary: expected Columbia Harbour House / Magic Kingdom, got ' + JSON.stringify(loc));
+  }
+
+  return { ok: true, cases: 5 };
 }
 
 if(typeof module === 'object' && module.exports){
@@ -1082,6 +1201,9 @@ if(typeof module === 'object' && module.exports){
     buildStageModel,
     computeScore,
     runPrioritizeFixtures,
+    buildWaitingNudge,
+    locationFromSummary,
+    locationPhraseFromSummary,
     BIZ,
     DEFAULT_BIZ,
     RA_CRAFT_BUFFER

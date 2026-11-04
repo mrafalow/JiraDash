@@ -115,7 +115,7 @@ def park_from_path(path: str, webdav: str = "", facility_slug: str | None = None
     last = parts[-1].lower() if parts else ""
     for i, p in enumerate(parts):
         pl = p.lower()
-        if pl in ("dining", "things-to-do") and i + 1 < len(parts):
+        if pl in ("dining", "things-to-do", "destinations", "events", "entertainment") and i + 1 < len(parts):
             candidate = parts[i + 1].lower()
             if candidate in ("resort-dining", "wdw", "root", "building blocks"):
                 continue
@@ -141,7 +141,7 @@ def path_mentions_dining(rec: dict) -> bool:
     path = (rec.get("path") or "").lower()
     webdav = (rec.get("webdav") or "").lower()
     combined = path + " " + webdav
-    for token in ("dining", "entertainment", "events", "things-to-do"):
+    for token in ("dining", "entertainment", "destinations", "destination", "events", "things-to-do"):
         if token in combined:
             return True
     return False
@@ -226,6 +226,8 @@ def index_page(by_id: dict, index: dict, rec: dict, tree: str) -> None:
     rid = rec.get("id", "")
     if not rid.endswith("-64"):
         return
+    if is_excluded_replica_path(rec):
+        return
     if not path_mentions_dining(rec):
         return
     slug = slug_from_page(rec)
@@ -253,11 +255,34 @@ def is_migration_bb_path(rec: dict) -> bool:
     return "contentmigration" in path or "things to do - wdw" in path
 
 
+def is_excluded_replica_path(rec: dict) -> bool:
+    """Replica / DO-NOT-PUBLISH trees under EVO065 BB (e.g. Delete on August 31 WDW)."""
+    combined = " ".join(
+        [
+            (rec.get("path") or ""),
+            (rec.get("webdav") or ""),
+            (rec.get("title") or ""),
+        ]
+    ).lower()
+    if "personalization" in combined:
+        return True
+    markers = (
+        "delete on august 31 wdw",
+        "delete on august 31",
+        "new-do-not-publish",
+        "modified-do-not-publish",
+        "do-not-publish",
+    )
+    return any(m in combined for m in markers)
+
+
 def index_bb_folder(by_id: dict, index: dict, rec: dict, tree: str) -> None:
     rid = rec.get("id", "")
     if not rid.endswith("-2"):
         return
     if is_migration_bb_path(rec):
+        return
+    if is_excluded_replica_path(rec):
         return
     # Skip publication Building Blocks root itself
     body = rid.split(":")[1] if ":" in rid else ""
@@ -296,6 +321,8 @@ def index_structure_facility(by_id: dict, index: dict, rec: dict, tree: str) -> 
     if not rid.endswith("-4"):
         return
     if rec.get("type") not in ("StructureGroup", "Folder", None):
+        return
+    if is_excluded_replica_path(rec):
         return
     if not path_mentions_dining(rec):
         return

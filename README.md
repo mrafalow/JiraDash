@@ -34,7 +34,7 @@ To run on Disney **Studioshare Launch** (GitLab deploy, separate from GitHub), s
 
 ## Validate view (ticket work)
 
-Sidebar **Validate**: paste a WDW prod dining URL (`disneyworld.disney.go.com/dining/…`) to get:
+Sidebar **Validate**: paste a WDW prod URL (`/dining/`, `/entertainment/`, `/destinations/`, `/events/`, `/things-to-do/`) to get:
 
 1. Display name
 2. **Site:** Production, Stage (`stage.` host), Latest (`latest.` host)
@@ -84,6 +84,15 @@ npm run test:jira
 
 Expect `OK: authenticated as …`. If it fails with 401/403, update `JIRA_API_TOKEN` in `.env`.
 
+## Translations choices (Recently Closed)
+
+Needed / Not needed / undo **All closed** are stored on the **JiraDash server** in `data/translations-choices.json` (not only in the browser). Each save keeps a rolling backup at `data/backups/translations-choices.bak.json`.
+
+- **Same Wi‑Fi / two machines:** point both at the same host (e.g. `http://127.0.0.1:3847` on one machine, or a shared deployed instance).
+- **Laptop or desktop wiped:** commit and push `data/translations-choices.json` to your git remote periodically (or after bulk updates). Clone the repo on the new machine, run `npm start`, and choices reload on dashboard open. If the main file is lost, copy `data/backups/translations-choices.bak.json` over `data/translations-choices.json`.
+
+Jira workflow status (QA Review, Awaiting Release, etc.) always comes from Jira on refresh — nothing extra to back up for that.
+
 ## Files
 
 | File | Role |
@@ -97,3 +106,4 @@ Expect `OK: authenticated as …`. If it fails with 401/403, update `JIRA_API_TO
 | `validate.js` | Validate view UI |
 | `scripts/dscribe/` | D-Scribe link builders, dining resolve, index builder |
 | `data/dining-slug-index.json` | Slug → EVO040/EVO065/LGCY065 BB + page folder chains (rebuild from crawl) |
+| `data/translations-choices.json` | Recently Closed translations Needed/Not needed (commit to git for wipe recovery) |

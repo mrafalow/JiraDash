@@ -1,5 +1,7 @@
 'use strict';
 
+const urlAnchors = require('./validate-url-anchors.js');
+
 function parkFromLookupKey(lookupKey) {
   if (!lookupKey || !lookupKey.includes('/')) return '';
   return lookupKey.split('/')[0];
@@ -290,10 +292,8 @@ function resolveDiningUrl(rawUrl, links, entries, lgcySlotsBySlug, chainSuppleme
       'URL slug “' + norm.slug + '” mapped to CMS index slug “' + indexSlug + '”.'
     );
   }
-  if (norm.contentKind === 'entertainment') {
-    warnings.push(
-      'Entertainment URL — EVO065 Root/Page needs an entertainment folder in the index or a D-Scribe session search (below).'
-    );
+  if (urlAnchors.usesNonDiningIndexWarning(norm.contentKind)) {
+    warnings.push(urlAnchors.nonDiningIndexWarningLabel(norm.contentKind));
   }
   if (!entry) {
     warnings.push(

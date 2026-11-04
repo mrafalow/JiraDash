@@ -114,7 +114,7 @@
     <div id="viewValidate" style="display:none;">
       <section class="panel-block">
         <div class="section-title">TICKET WORK &mdash; PASTE PROD URL</div>
-        <p class="validate-hint">Paste a WDW <strong>dining</strong> or <strong>entertainment</strong> URL (locale prefixes OK) for Production / Stage / Latest. D-Scribe sections are scoped to US All only: <strong>EVO040 (281)</strong> Building Blocks, <strong>EVO065 (934)</strong> Building Blocks + Root/Page, <strong>LGCY065 (914)</strong> Root/Page. When the index has no exact folder, Validate searches that publication (D-Scribe session required) and lists matches with folder paths — no silent Root links.</p>
+        <p class="validate-hint">Paste a WDW prod URL under <strong>/dining/</strong>, <strong>/entertainment/</strong>, <strong>/destinations/</strong>, <strong>/events/</strong>, or <strong>/things-to-do/</strong> (locale prefixes OK) for Production / Stage / Latest. D-Scribe sections are scoped to US All only: <strong>EVO040 (281)</strong> Building Blocks, <strong>EVO065 (934)</strong> Building Blocks + Root/Page, <strong>LGCY065 (914)</strong> Root/Page. When the index has no exact folder, Validate searches that publication (D-Scribe session required) and lists matches with folder paths — no silent Root links.</p>
         <div class="validate-dscribe-session" id="validateDscribeSession">
           <div class="validate-dscribe-head">
             <span class="validate-dscribe-title">D-Scribe session</span>
@@ -128,7 +128,7 @@
           <p class="validate-dscribe-note" id="validateDscribeNote"></p>
         </div>
         <div class="validate-input-row">
-          <input type="url" id="validateUrlInput" class="validate-url-input" placeholder="https://disneyworld.disney.go.com/dining/…" spellcheck="false" autocomplete="off">
+          <input type="url" id="validateUrlInput" class="validate-url-input" placeholder="https://disneyworld.disney.go.com/dining/… or /destinations/…" spellcheck="false" autocomplete="off">
           <div class="validate-d-indicator validate-d-indicator--idle" id="validateDIndicator" role="status" aria-live="polite" aria-label="Paste a prod URL to resolve">
             <span class="validate-d-indicator__letter" aria-hidden="true">D</span>
           </div>
@@ -158,7 +158,7 @@
     <div id="viewLaunches" style="display:none;">
       <section class="panel-block">
         <div class="section-title">LAUNCHES &mdash; RUNBOOK PREP</div>
-        <p class="launch-page-hint">WDW launch epics (Epic + “Launch” in summary) with milestone child tickets. Use <strong>GCx checklist</strong> for Stage/Prod verification, or <strong>Live runbook</strong> (Smartsheet API — set <code>SMARTSHEET_ACCESS_TOKEN</code> in <code>.env</code>). N/A rows are hidden in the live view by default.</p>
+        <p class="launch-page-hint">Launch epics with milestone tickets live here (not Active Requests). <strong>GCx checklist</strong>: Preparation, Validation, and Launch Day; status chips track progress (N/A does not block). Top pill compares open runbook tasks to Smartsheet due dates when <code>SMARTSHEET_ACCESS_TOKEN</code> is set.</p>
         <div id="launchList"><div class="loading-wrap"><div class="spinner"></div><span>Loading launches&hellip;</span></div></div>
       </section>
     </div>

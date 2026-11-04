@@ -1,6 +1,8 @@
 'use strict';
 
 const { DSCRIBE_BASE, getCookie } = require('./dscribe-session.js');
+const urlAnchors = require('./validate-url-anchors.js');
+const { isExcludedCmsPath } = require('./dscribe-excluded-paths.js');
 
 const PUB_SLOTS = {
   '281': 'evo040',
@@ -115,12 +117,7 @@ function slugFromItem(it, targetSlug) {
 
 function pathMentionsDining(it) {
   const path = String(it.path || it.Path || '').toLowerCase();
-  return (
-    path.includes('dining') ||
-    path.includes('entertainment') ||
-    path.includes('events') ||
-    path.includes('things-to-do')
-  );
+  return urlAnchors.pathMentionsIndexablePath(path, 'dining');
 }
 
 async function walkParentChain(cookie, startParent, stopSuffixes) {
@@ -192,6 +189,7 @@ async function lookupSlugEntryLive(slug, lookupKey) {
   for (const it of items) {
     const id = it.id || it.Id;
     if (!id || !String(id).startsWith('tcm:')) continue;
+    if (isExcludedCmsPath(it)) continue;
     const pub = pubFromTcm(id);
     const tree = PUB_SLOTS[pub];
     if (!tree) continue;

@@ -1,5 +1,7 @@
 'use strict';
 
+const anchors = require('./validate-url-anchors.js');
+
 const DSCRIBE_BASE = 'https://dpep-dscribe-production.tridion.sdlproducts.com';
 
 /** Content / parent publish publications (WDW). */
@@ -189,7 +191,7 @@ function normalizeProdUrl(raw) {
   }
   const host = u.hostname.toLowerCase();
   if (!host.includes('disney.go.com')) {
-    return { error: 'Expected a disney.go.com URL (WDW dining or entertainment).' };
+    return { error: 'Expected a disney.go.com URL (WDW content path).' };
   }
   u.search = '';
   u.hash = '';
@@ -197,14 +199,13 @@ function normalizeProdUrl(raw) {
   let path = u.pathname;
   if (!path.endsWith('/')) path += '/';
   let segments = stripLeadingLocaleSegments(path.split('/').filter(Boolean));
-  const diningIdx = segments.indexOf('dining');
-  const entertainmentIdx = segments.indexOf('entertainment');
-  const anchorIdx = diningIdx >= 0 ? diningIdx : entertainmentIdx;
-  if (anchorIdx < 0) {
-    return { error: 'URL path should include /dining/… or /entertainment/…' };
+  const found = anchors.findUrlAnchor(segments);
+  if (!found) {
+    return { error: 'URL path should include one of: ' + anchors.validatePathHint() };
   }
-  const contentKind = diningIdx >= 0 ? 'dining' : 'entertainment';
-  const section = segments[anchorIdx];
+  const anchorIdx = found.anchorIdx;
+  const contentKind = found.contentKind;
+  const section = found.section;
   const after = segments.slice(anchorIdx + 1);
   if (!after.length) {
     return { error: 'Missing slug after /' + section + '/.' };
@@ -275,7 +276,8 @@ const api = {
   normalizeProdUrl,
   stageUrlFromProd,
   latestUrlFromProd,
-  localeLatestUrl
+  localeLatestUrl,
+  VALIDATE_URL_ANCHORS: anchors.VALIDATE_URL_ANCHORS
 };
 
 if (typeof globalThis !== 'undefined') {

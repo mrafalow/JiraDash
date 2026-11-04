@@ -40,6 +40,10 @@ function saveLaunchProgress(progress) {
 }
 
 module.exports = {
+  ROOT,
+  DATA,
+  readJson,
+  writeJson,
   loadLaunchConfig,
   loadLaunchProgress,
   saveLaunchProgress

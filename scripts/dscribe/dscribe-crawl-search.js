@@ -4,6 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const links = require('./dscribe-links.js');
+const urlAnchors = require('./validate-url-anchors.js');
+const { isExcludedCmsPath } = require('./dscribe-excluded-paths.js');
 
 const PUBLICATION_SCOPE = {
   evo040: { publishId: '281', sourcePubs: ['281', '501'] },
@@ -135,7 +137,7 @@ function collectCrawlRecords(slug, displayName, urlSlug) {
       .filter(Boolean)
       .forEach((line) => {
         const rec = parseJsonlLine(line);
-        if (rec && rec.id) byId[rec.id] = rec;
+        if (rec && rec.id && !isExcludedCmsPath(rec)) byId[rec.id] = rec;
       });
     if (Object.keys(byId).length >= 8) break;
   }
@@ -147,7 +149,7 @@ function folderPathLabel(rec) {
   const raw = String(rec.path || rec.webdav || '').trim();
   if (!raw) return '—';
   const parts = raw.split(/[/\\]/).filter(Boolean);
-  const idx = parts.findIndex((p) => /entertainment|dining|events|things-to-do/i.test(p));
+  const idx = urlAnchors.folderPathSliceStart(parts);
   const slice = idx >= 0 ? parts.slice(idx) : parts.slice(-5);
   return slice.join(' / ') || raw;
 }
@@ -156,7 +158,7 @@ function matchRank(slug, displayName, rec, urlSlug) {
   const title = String(rec.title || '').toLowerCase();
   const slugL = slug.toLowerCase();
   const path = String(rec.path || rec.webdav || '').toLowerCase();
-  if (/personalization/i.test(title) || path.includes('personalization')) {
+  if (isExcludedCmsPath(rec)) {
     return { rank: 99, exact: false };
   }
   const id = String(rec.id || '');
@@ -248,7 +250,7 @@ function crawlCandidatesForPublication(pubKey, slug, displayName, urlSlug, conte
   Object.values(byId).forEach((rec) => {
     if (!rec.id || !allowedPubForItem(pubKey, rec.id, rec, contentKind)) return;
     const path = String(rec.path || rec.webdav || '').toLowerCase();
-    if (contentKind === 'entertainment' && !path.includes('entertainment') && !String(rec.id).endsWith('-64')) {
+    if (!urlAnchors.crawlRecordPathAllowed(contentKind, path, rec.id)) {
       return;
     }
     const { rank, exact } = matchRank(slug, displayName, rec, urlSlug);
@@ -257,7 +259,7 @@ function crawlCandidatesForPublication(pubKey, slug, displayName, urlSlug, conte
   });
   ranked.sort((a, b) => {
     if (a.rank !== b.rank) return a.rank - b.rank;
-    if (contentKind === 'entertainment') {
+    if (urlAnchors.usesEntertainmentCrawlRanking(contentKind)) {
       const aPage = String(a.rec.title || '').toLowerCase().startsWith('page-') ? 0 : 1;
       const bPage = String(b.rec.title || '').toLowerCase().startsWith('page-') ? 0 : 1;
       if (aPage !== bPage) return aPage - bPage;
@@ -333,7 +335,7 @@ function entertainmentBuildingBlocksFromCrawl(byId, pubKey, slug, urlSlug) {
     if (!rec.id || pubFromTcm(rec.id) !== '472' || !String(rec.id).endsWith('-2')) return;
     const path = String(rec.path || rec.webdav || '').toLowerCase();
     if (!path.includes('building blocks') || !path.includes('entertainment')) return;
-    if (/personalization/.test(path)) return;
+    if (isExcludedCmsPath(rec)) return;
     const title = String(rec.title || '').toLowerCase();
     const webdav = String(rec.webdav || '').toLowerCase();
     let score = 5;

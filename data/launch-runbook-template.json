@@ -10,60 +10,534 @@
       "label": "Festival / multi-window validation"
     }
   },
+  "phases": [
+    {
+      "id": "preparation",
+      "title": "Preparation",
+      "guide": {
+        "objective": "Lock dates, IDs, and page setup. Allow at least four weeks before reservations open for the validation phase (backend checks plus test bookings)."
+      },
+      "sectionIds": [
+        "dscribe-pro-prep",
+        "prep-stakeholders",
+        "prep-look-only",
+        "ids",
+        "prep-bell-content",
+        "copy"
+      ]
+    },
+    {
+      "id": "validation",
+      "title": "Validation",
+      "guide": {
+        "objective": "Partner backend validations, then stage and prod test bookings (typically about two weeks each)."
+      },
+      "sectionIds": ["validation-backend", "validation-testing", "stage", "wait-room"]
+    },
+    {
+      "id": "launchDay",
+      "title": "Launch Day",
+      "guide": {
+        "objective": "Morning call, Bell unlock, live test book, go/no-go, copy and comms. Service-start follow-up tracks on the Service Start milestone."
+      },
+      "sectionIds": ["dfm", "launch-day-run", "prod"]
+    }
+  ],
   "sections": [
+    {
+      "id": "today",
+      "title": "Today",
+      "guide": {
+        "objective": "Same-day kickoff tasks before diving into preparation.",
+        "owner": "Studio Titan GCx",
+        "contact": "Partner; Bell team",
+        "turnaround": "Start of launch program",
+        "steps": [
+          "Message Partner with asks for service dates, copy, images, and pre-booking page needs.",
+          "Clean up launch epic and milestone subtasks in Jira.",
+          "Run look-only checks (inventory tool, DScribe metadata, IDs) in one pass.",
+          "Sync with Bell team on menu publish state."
+        ]
+      },
+      "rows": [
+        {
+          "id": "today-partner",
+          "label": "Partner outreach started",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "trackEnv": "done",
+          "guide": {
+            "objective": "Partner knows what you need and when you will confirm reservations-open date.",
+            "owner": "GCx",
+            "contact": "Partner on epic",
+            "steps": [
+              "Ask for service start date, copy, images, special page notes, and pre-reservations messaging.",
+              "Note you will follow up with reservations-open date after Bell alignment."
+            ]
+          }
+        },
+        {
+          "id": "today-jira",
+          "label": "Launch epic and milestones structured in Jira",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "trackEnv": "done",
+          "guide": {
+            "objective": "Epic, Bookings Launch, and Service Start tickets reflect the runbook.",
+            "owner": "GCx",
+            "steps": ["Review epic summary, due dates, and child milestone tickets.", "Align titles with runbook milestones."]
+          }
+        },
+        {
+          "id": "today-look-only",
+          "label": "Look-only check bundle (~30 min)",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "trackEnv": "done",
+          "guide": {
+            "objective": "Inventory, DScribe facets, and IDs reviewed without saving changes.",
+            "owner": "GCx",
+            "contact": "Bell team for first walkthrough if needed",
+            "steps": [
+              "Inventory tool: stage/latest/prod search, breakfast/lunch visible-online (cancel without save).",
+              "DScribe: reservation facets on legacy page; no sellable flag on EVO for standard dining.",
+              "Postman, Watcher sellable flags, Explorer search (locked periods may be expected)."
+            ]
+          }
+        },
+        {
+          "id": "today-bell-sync",
+          "label": "Bell team check-in",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "trackEnv": "done",
+          "guide": {
+            "objective": "Menus and schedules align with launch plan while still locked for guests.",
+            "owner": "GCx",
+            "contact": "Bell team",
+            "steps": [
+              "Confirm meal option changes if any.",
+              "Confirm published to latest/stage/prod but locked.",
+              "Confirm seating schedules sent to ops sheet team."
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "dscribe-pro-prep",
+      "title": "Pro D-Scribe pre-prep",
+      "requiresLaunchFlag": "needsProDscribeChanges",
+      "guide": {
+        "objective": "Blueprint or Pro D-Scribe work that must finish before main preparation.",
+        "owner": "GCx",
+        "contact": "Runbook Owner column",
+        "turnaround": "Before preparation window"
+      },
+      "rows": [
+        {
+          "id": "dscribe-pro-prep-done",
+          "label": "Pro / EVO D-Scribe changes complete in stage",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "requiresLaunchFlag": "needsProDscribeChanges",
+          "trackEnv": "stage",
+          "guide": {
+            "objective": "Authoring changes published to stage per runbook.",
+            "owner": "GCx",
+            "steps": ["Complete runbook Pro D-Scribe rows.", "Verify on stage/latest before validations."]
+          }
+        }
+      ]
+    },
+    {
+      "id": "prep-stakeholders",
+      "title": "Dates and Partner",
+      "guide": {
+        "objective": "Reservations-open date agreed with Bell team and recorded in runbook and Jira.",
+        "owner": "GCx",
+        "contact": "Partner; Bell team"
+      },
+      "rows": [
+        {
+          "id": "prep-partner-outreach",
+          "label": "Partner asks documented (copy, images, service date)",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "trackEnv": "done",
+          "guide": {
+            "objective": "Partner deliverables tracked on epic or Bookings Launch ticket.",
+            "owner": "GCx",
+            "contact": "Partner"
+          }
+        },
+        {
+          "id": "prep-reservations-date",
+          "label": "Reservations-open date set (runbook + Epic)",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "trackEnv": "done",
+          "guide": {
+            "objective": "Yellow launch-day cell and Epic due reflect bookings open; leave validation lead time.",
+            "owner": "GCx",
+            "contact": "Bell team",
+            "steps": [
+              "Align date with Bell team and Partner.",
+              "Update Smartsheet runbook and Jira Epic.",
+              "Confirm at least four weeks before open for validation when possible."
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "prep-look-only",
+      "title": "Look-only tooling",
+      "guide": {
+        "objective": "Repeatable look-only checks before validation window.",
+        "owner": "GCx"
+      },
+      "rows": [
+        {
+          "id": "prep-vendomatic",
+          "label": "Inventory tool look-only (IDs, visible online)",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "trackEnv": "stage",
+          "guide": {
+            "objective": "Facility ID matches epic; meal periods visible online in stage/latest/prod.",
+            "owner": "GCx",
+            "steps": ["Search facility; open breakfast/lunch rows; verify ID and visible online; cancel without save."]
+          }
+        },
+        {
+          "id": "prep-dscribe-facets",
+          "label": "DScribe metadata (reservation facets, sellable flags)",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "trackEnv": "stage",
+          "guide": {
+            "objective": "Legacy page has check-avail and reservations facets; EVO sellable only for dine events.",
+            "owner": "GCx"
+          }
+        }
+      ]
+    },
+    {
+      "id": "prep-bell-content",
+      "title": "Bell publish and content handoff",
+      "guide": {
+        "objective": "Menus locked appropriately; copy and images on Bookings Launch path to stage.",
+        "owner": "GCx",
+        "contact": "Bell team; Managed Services for staging"
+      },
+      "rows": [
+        {
+          "id": "prep-bell-menus",
+          "label": "Bell menus published (locked) on latest/stage/prod",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "trackEnv": "stage",
+          "guide": {
+            "objective": "Bell team publish state matches plan before validations.",
+            "owner": "GCx verifies",
+            "contact": "Bell team"
+          }
+        },
+        {
+          "id": "prep-page-content",
+          "label": "Copy/images on Bookings Launch ticket; Partner approval on stage",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "trackEnv": "stage",
+          "guide": {
+            "objective": "Content staged and approved before reservations open morning.",
+            "owner": "GCx",
+            "contact": "Partner; Managed Services",
+            "steps": [
+              "Attach copy and images to Bookings Launch milestone ticket.",
+              "Stage on test page via Managed Services or GCx.",
+              "Partner screenshot approval about one week before reservations open."
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "validation-backend",
+      "title": "Backend validations",
+      "guide": {
+        "objective": "Remy product launch channel and partner sign-offs before stage test bookings.",
+        "owner": "GCx",
+        "turnaround": "About two weeks"
+      },
+      "rows": [
+        {
+          "id": "val-teams-channel",
+          "label": "Validation channel posted (IDs, dates, tags)",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "trackEnv": "done",
+          "guide": {
+            "objective": "WDW Remy launch channel created with facility ID, meal period IDs, and dates.",
+            "owner": "GCx",
+            "steps": ["Create channel; post using prior launch template; tag partner teams and Bell team."]
+          }
+        },
+        {
+          "id": "val-watch-partners",
+          "label": "Partner backend checks complete (pricing, rules, slots)",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "trackEnv": "stage",
+          "guide": {
+            "objective": "RecSE, Remy, and related teams finish data checks.",
+            "owner": "GCx coordinates",
+            "steps": ["Monitor channel; nudge slow responders.", "Track pricing, party size, card guarantee, add-ons, bookable slots."]
+          }
+        },
+        {
+          "id": "val-green-light",
+          "label": "Green light for stage testing + launch-day invite sent",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "trackEnv": "done",
+          "guide": {
+            "objective": "Partners cleared for stage bookings; launch morning invite scheduled.",
+            "owner": "GCx"
+          }
+        }
+      ]
+    },
+    {
+      "id": "validation-testing",
+      "title": "Test bookings",
+      "guide": {
+        "objective": "Stage guest flow, prod hidden test bookings, cast-side parallel tests.",
+        "owner": "GCx",
+        "turnaround": "About one to two weeks"
+      },
+      "rows": [
+        {
+          "id": "val-stage-guest-bookings",
+          "label": "Stage guest bookings (breakfast + lunch, My Plans, cancel)",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "trackEnv": "stage",
+          "guide": {
+            "objective": "Remy stage flow and My Plans web/app for both meal periods.",
+            "owner": "GCx",
+            "steps": ["Book breakfast and lunch.", "Verify modify option.", "Cancel and confirm in My Plans."]
+          }
+        },
+        {
+          "id": "val-prod-test-booking",
+          "label": "Prod test bookings (Bell team, hidden inventory)",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "trackEnv": "prod",
+          "guide": {
+            "objective": "Prod bookings on GCx account before guest-facing unlock.",
+            "owner": "GCx",
+            "contact": "Bell team",
+            "steps": ["Bell books breakfast/lunch in prod.", "Verify My Plans; cancel online; Bell confirms cancellation."]
+          }
+        },
+        {
+          "id": "val-cast-alc",
+          "label": "Cast-side (a la carte) parallel test",
+          "appliesTo": ["standardRestaurant", "diningEvent"],
+          "trackEnv": "stage",
+          "guide": {
+            "objective": "Disney Central books and cancels in a la carte during stage window.",
+            "owner": "GCx coordinates timing with cast team"
+          }
+        }
+      ]
+    },
+    {
+      "id": "launch-day-run",
+      "title": "Launch morning",
+      "guide": {
+        "objective": "Teams call (~5:00–6:00 am ET): unlock, test book, go/no-go, copy publish.",
+        "owner": "GCx runs call"
+      },
+      "rows": [
+        {
+          "id": "launch-call-kickoff",
+          "label": "Call opened: links, IDs, roll call, recap",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "trackEnv": "prod",
+          "guide": {
+            "objective": "Everyone has links and context before unlock.",
+            "owner": "GCx"
+          }
+        },
+        {
+          "id": "launch-bell-unlock",
+          "label": "Bell team unlock (test window then full inventory)",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "trackEnv": "prod",
+          "guide": {
+            "objective": "Unbox test slot first, then full inventory after go.",
+            "owner": "GCx",
+            "contact": "Bell team"
+          }
+        },
+        {
+          "id": "launch-live-test-book",
+          "label": "Live page test book, modify, cancel",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "trackEnv": "prod",
+          "guide": {
+            "objective": "Reservation button on live page; confirmation in chat for Bell lookup.",
+            "owner": "GCx",
+            "steps": ["Book unlocked slot; screenshot steps.", "My Plans check; modify; cancel with Bell confirmation."]
+          }
+        },
+        {
+          "id": "launch-go-nogo",
+          "label": "Go / no-go (command center bridge)",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "trackEnv": "prod",
+          "guide": {
+            "objective": "Bridge confirms before full inventory unlock.",
+            "owner": "GCx"
+          }
+        },
+        {
+          "id": "launch-copy-and-email",
+          "label": "Prod copy live + launch announcement sent",
+          "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
+          "trackEnv": "prod",
+          "guide": {
+            "objective": "Page copy matches approved content; comms per runbook.",
+            "owner": "GCx",
+            "steps": ["Publish copy on prod.", "Verify page.", "Send what-went-live comms per team process."]
+          }
+        }
+      ]
+    },
     {
       "id": "ids",
       "title": "IDs & inventory",
+      "guide": {
+        "objective": "Lock the facility and meal-period identifiers every downstream team uses (Watcher, Bell, stage/prod checks).",
+        "owner": "Studio Titan GCx documents; Bell publishes meal plans.",
+        "contact": "Bell team (meal plans), your runbook Owner column for each task.",
+        "turnaround": "Usually complete during prelaunch validations (see Smartsheet dates).",
+        "steps": [
+          "Confirm facility ID in Nemo debugger and Bell Build Sheet.",
+          "After Bell publishes, capture breakfast/lunch meal period IDs in Watcher stage.",
+          "Reference IDs in launch notes and Jira epic config."
+        ]
+      },
       "rows": [
         {
           "id": "facility-id",
           "label": "Facility / restaurant ID documented",
           "appliesTo": ["standardRestaurant", "diningEvent"],
-          "help": "Use Nemo debugger / Bell sheet. Reference in Watcher when verifying meal periods."
+          "guide": {
+            "objective": "One canonical restaurant/facility ID for Watcher, Remy, and content tools.",
+            "owner": "GCx",
+            "contact": "Runbook Bell / Studio Titan rows; Nemo debugger.",
+            "turnaround": "Before backend validations window.",
+            "steps": [
+              "Look up prod facility ID (Nemo or Bell sheet).",
+              "Add to launch config and epic notes.",
+              "Use same ID when validating Watcher documents."
+            ]
+          }
         },
         {
           "id": "meal-periods",
           "label": "Meal period IDs verified (Watcher / stage)",
           "appliesTo": ["standardRestaurant", "diningEvent"],
-          "help": "Bell team publishes meal plans; GCx verifies in stage before prod go-live."
+          "guide": {
+            "objective": "Stage shows the correct meal periods (e.g. breakfast and lunch, not brunch).",
+            "owner": "Bell publishes builds; GCx verifies in stage.",
+            "contact": "Bell team (DScribe MP builds); GCx for Watcher checks.",
+            "turnaround": "After Bell stage/latest publish, before prod booking validations.",
+            "steps": [
+              "Get meal period IDs from Bell Build Sheet (form rows).",
+              "Open Watcher stage doc for the facility.",
+              "Confirm periods match runbook (add/remove as planned)."
+            ]
+          }
         },
         {
           "id": "event-id",
           "label": "Event ID",
           "appliesTo": ["diningEvent"],
-          "help": "Not used for standard restaurant pages."
+          "guide": {
+            "objective": "Dining events need an event ID in inventory systems.",
+            "owner": "Partner with GCx verification.",
+            "contact": "Runbook owner for event setup tasks.",
+            "turnaround": "Per runbook prelaunch phase.",
+            "steps": ["Obtain event ID from Partner.", "Verify in stage before prod go-live."]
+          }
         }
       ]
     },
     {
       "id": "copy",
       "title": "Copy & page",
+      "guide": {
+        "objective": "Align page copy with meal periods and booking story before guests see changes.",
+        "owner": "Studio Titan GCx (copy); Partner approves messaging.",
+        "contact": "Jira content ticket assignees; runbook Copy rows.",
+        "turnaround": "Full details optional early; bookings copy before ~5am bookings push.",
+        "steps": [
+          "Confirm whether Partner wants full-details teaser before bookings.",
+          "Update copy for bookings launch (remove old meal period references).",
+          "Service-start copy only if advisory or hours messaging changes."
+        ]
+      },
       "rows": [
         {
           "id": "initial-details",
           "label": "Initial / full details content (if requester wants teaser)",
           "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
           "optional": true,
-          "help": "Ask requester: content before bookings vs day-of only."
+          "guide": {
+            "objective": "Optional teaser page before bookings open.",
+            "owner": "GCx copy; Partner approval.",
+            "contact": "Partner on Jira epic.",
+            "turnaround": "Prelaunch activities window if used.",
+            "steps": [
+              "Ask Partner: teaser before bookings or day-of only?",
+              "If yes, stage full-details updates and get approval.",
+              "Validate prod URL in stage before enabling in prod."
+            ]
+          }
         },
         {
           "id": "copy-bookings",
           "label": "Copy updates for bookings launch",
           "appliesTo": ["standardRestaurant", "diningEvent"],
-          "help": "e.g. remove brunch references; align with breakfast/lunch meal periods."
+          "guide": {
+            "objective": "Prod copy matches breakfast/lunch (or new periods) when bookings open.",
+            "owner": "Studio Titan GCx.",
+            "contact": "Copy subtask assignee; PR reviewer.",
+            "turnaround": "Complete before prod bookings launch milestone.",
+            "steps": [
+              "Remove obsolete meal period references (e.g. brunch).",
+              "Update hours/advisory text per runbook.",
+              "Stage verify, then prod with bookings push."
+            ]
+          }
         },
         {
           "id": "copy-service",
           "label": "Copy / advisory updates for service start",
           "appliesTo": ["standardRestaurant", "diningEvent"],
           "optional": true,
-          "help": "May be no change; service-start ticket still tracks the date."
+          "guide": {
+            "objective": "Service-start date tracked; copy may be unchanged.",
+            "owner": "GCx if copy changes.",
+            "contact": "Service Start milestone in Jira.",
+            "turnaround": "Before service start date.",
+            "steps": [
+              "Confirm with Partner if any service-day messaging is needed.",
+              "If none, mark checklist verified after date passes."
+            ]
+          }
         },
         {
           "id": "eec-list",
           "label": "Enchanted Extra / EEC list updates",
           "appliesTo": ["diningEvent"],
-          "help": "Not applicable to standard restaurant launches."
+          "guide": {
+            "objective": "EEC list includes new or updated experiences.",
+            "owner": "GCx / EEC team per runbook.",
+            "contact": "Runbook EEC rows.",
+            "turnaround": "Per dine-event runbook.",
+            "steps": ["Update EEC list content.", "Validate in stage then prod."]
+          }
         }
       ]
     },
@@ -71,19 +545,39 @@
       "id": "dfm",
       "title": "Down for maintenance (DFM)",
       "requiresLaunchFlag": "needsDfm",
+      "guide": {
+        "objective": "Maintenance page and comms for high-traffic cutovers.",
+        "owner": "Studio Titan + comms per runbook.",
+        "contact": "Runbook DFM phase owners.",
+        "turnaround": "Go-live morning window.",
+        "steps": ["Schedule DFM.", "Verify lift and all-clear before validations."]
+      },
       "rows": [
         {
           "id": "dfm-window",
           "label": "DFM window scheduled and communicated",
           "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
           "requiresLaunchFlag": "needsDfm",
-          "help": "Skip when the launch does not need a maintenance page (most standard restaurant meal-period changes)."
+          "guide": {
+            "objective": "Guests see maintenance page during cutover.",
+            "owner": "Studio Titan GCx.",
+            "contact": "Runbook comms rows.",
+            "turnaround": "Start of prod go-live window.",
+            "steps": ["Confirm DFM start/end with runbook.", "Communicate to validation partners."]
+          }
         },
         {
           "id": "dfm-comms",
           "label": "DFM lift / all-clear verified",
           "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
-          "requiresLaunchFlag": "needsDfm"
+          "requiresLaunchFlag": "needsDfm",
+          "guide": {
+            "objective": "DFM removed before booking validations.",
+            "owner": "GCx.",
+            "contact": "On-call / runbook owner.",
+            "turnaround": "Before prod booking validations.",
+            "steps": ["Confirm DFM cleared in prod.", "Notify validation channel."]
+          }
         }
       ]
     },
@@ -91,63 +585,151 @@
       "id": "wait-room",
       "title": "Wait room",
       "requiresLaunchFlag": "needsWaitRoom",
+      "guide": {
+        "objective": "Wait room controls demand during sensitive launches.",
+        "owner": "Studio Titan / platform per runbook.",
+        "contact": "Runbook wait room tasks.",
+        "turnaround": "Go-live window.",
+        "steps": ["Configure wait room in stage and prod.", "Disable after stable go-live."]
+      },
       "rows": [
         {
           "id": "wait-room-setup",
           "label": "Wait room configured (stage + prod)",
           "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
           "requiresLaunchFlag": "needsWaitRoom",
-          "help": "Used for high-demand or complex launches; not expected for this profile."
+          "guide": {
+            "objective": "Wait room active before high-traffic opening.",
+            "owner": "Platform / GCx per runbook.",
+            "contact": "Runbook Owner column.",
+            "turnaround": "Before bookings validations.",
+            "steps": ["Enable wait room per runbook.", "Smoke test prod URL behavior."]
+          }
         },
         {
           "id": "wait-room-prod",
           "label": "Wait room disabled after go-live",
           "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
-          "requiresLaunchFlag": "needsWaitRoom"
+          "requiresLaunchFlag": "needsWaitRoom",
+          "guide": {
+            "objective": "Normal guest flow after launch stabilizes.",
+            "owner": "GCx.",
+            "contact": "Runbook owner.",
+            "turnaround": "After validation window.",
+            "steps": ["Disable wait room.", "Confirm Get Details / booking paths work."]
+          }
         }
       ]
     },
     {
       "id": "stage",
       "title": "Stage verification",
+      "guide": {
+        "objective": "Prove stage/latest matches plan before any prod push.",
+        "owner": "Studio Titan GCx.",
+        "contact": "Bell for menus; RecSE/Remy rows for backend validations.",
+        "turnaround": "After prelaunch product validations, before prod bookings.",
+        "steps": [
+          "Validate prod URL on stage/latest hosts.",
+          "Confirm meal periods and menus render.",
+          "Sign off Stage column on each checklist row."
+        ]
+      },
       "rows": [
         {
           "id": "stage-meal-periods",
           "label": "Stage: meal periods and menus render as expected",
           "appliesTo": ["standardRestaurant", "diningEvent"],
-          "help": "Validate prod URL in stage; Bell/OPDM own menu publish."
+          "guide": {
+            "objective": "Menus and periods on stage match Bell publish and runbook.",
+            "owner": "GCx verifies; Bell/OPDM publish menus.",
+            "contact": "Bell team; Watcher stage doc.",
+            "turnaround": "During prelaunch validations.",
+            "steps": [
+              "Open prod dining URL on stage/latest.",
+              "Confirm breakfast/lunch (or planned periods) display.",
+              "Log defects in Jira if mismatch."
+            ]
+          }
         },
         {
           "id": "stage-copy",
           "label": "Stage: copy and page match runbook plan",
           "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
-          "help": "Complete before prod bookings launch."
+          "guide": {
+            "objective": "Copy, CTAs, and advisories match approved content.",
+            "owner": "GCx.",
+            "contact": "Copy assignee; Partner for sign-off.",
+            "turnaround": "Before prod bookings launch.",
+            "steps": [
+              "Review page on stage/latest.",
+              "Compare to approved copy / runbook notes.",
+              "Mark Stage verified when aligned."
+            ]
+          }
         }
       ]
     },
     {
       "id": "prod",
       "title": "Prod go-live",
+      "guide": {
+        "objective": "Prod bookings and service dates with partner validations complete.",
+        "owner": "Studio Titan GCx coordinates; partners execute runbook tasks.",
+        "contact": "Smartsheet Owner per task; Jira Bookings/Service milestones.",
+        "turnaround": "Bookings ~5am ET push; validations same day per runbook.",
+        "steps": [
+          "Track Bookings Launch and Service Start Jira milestones.",
+          "Complete prod validation rows in Smartsheet.",
+          "Mark Prod verified on checklist when done."
+        ]
+      },
       "rows": [
         {
           "id": "validation-tracker",
           "label": "Validation tracker (festival windows)",
           "appliesTo": ["festival"],
-          "help": "Not used for single-facility restaurant launches."
+          "guide": {
+            "objective": "Festival windows tracked in validation tracker.",
+            "owner": "GCx.",
+            "contact": "Festival runbook owners.",
+            "turnaround": "Per festival schedule.",
+            "steps": ["Update validation tracker.", "Close each window in Smartsheet."]
+          }
         },
         {
           "id": "prod-bookings",
           "label": "Prod bookings launch (~5am push)",
           "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
           "milestoneKind": "bookings",
-          "help": "Maps to Jira Bookings Launch milestone ticket."
+          "guide": {
+            "objective": "Bookings open on prod for new/changed meal periods.",
+            "owner": "GCx content push; partners validate per runbook.",
+            "contact": "Jira Bookings Launch child ticket; runbook Production Booking Validations.",
+            "turnaround": "Bookings launch date (~5am ET typical).",
+            "steps": [
+              "Confirm content publish completed.",
+              "Run prod booking validations (ALC, Remy, MyPlans).",
+              "Mark Prod verified when partner sign-offs are done."
+            ]
+          }
         },
         {
           "id": "prod-service",
           "label": "Prod service start",
           "appliesTo": ["standardRestaurant", "diningEvent", "festival"],
           "milestoneKind": "service",
-          "help": "First day guests can book / service available; maps to Service Start ticket."
+          "guide": {
+            "objective": "First day guests experience the new service model.",
+            "owner": "GCx monitors; ops per runbook.",
+            "contact": "Jira Service Start milestone.",
+            "turnaround": "Service start date.",
+            "steps": [
+              "Confirm service start milestone date.",
+              "Spot-check prod page and booking flow.",
+              "Close epic when runbook and Jira are complete."
+            ]
+          }
         }
       ]
     }

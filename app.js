@@ -1185,6 +1185,63 @@ function contentDueLabel(dueDate){
   return pretty;
 }
 
+/** Calendar days until due (negative = overdue). */
+const MS_CONTENT_DUE_SOON_CALENDAR_DAYS = 2;
+
+function isContentAwaitingRelease(status){
+  return /^awaiting\s+release$/i.test(String(status || '').trim());
+}
+
+function contentDueCalendarDaysUntil(dueDate){
+  if(!dueDate) return null;
+  const due = atMidnight(dueDate);
+  if(isNaN(due.getTime())) return null;
+  return calendarDaysBetween(todayMid(), due);
+}
+
+function isContentDueSoonForMs(dueDate){
+  const days = contentDueCalendarDaysUntil(dueDate);
+  if(days === null) return false;
+  return days <= MS_CONTENT_DUE_SOON_CALENDAR_DAYS;
+}
+
+function renderContentStatusCell(ticket){
+  const status = String(ticket && ticket.status != null ? ticket.status : '—');
+  const awaiting = isContentAwaitingRelease(status);
+  const dueSoon = !awaiting && isContentDueSoonForMs(ticket && ticket.dueDate);
+  const daysUntil = contentDueCalendarDaysUntil(ticket && ticket.dueDate);
+
+  const chipClasses = ['ms-status-chip'];
+  if(awaiting) chipClasses.push('ms-status-chip--awaiting-release');
+  else if(dueSoon) chipClasses.push('ms-status-chip--due-soon');
+
+  let title = status;
+  if(awaiting) title += ' — ready for prod';
+  else if(dueSoon && daysUntil !== null){
+    if(daysUntil < 0) title += ' · ' + Math.abs(daysUntil) + ' calendar day(s) overdue';
+    else if(daysUntil === 0) title += ' · due today';
+    else title += ' · due in ' + daysUntil + ' calendar day(s)';
+  }
+
+  const flags = [];
+  if(awaiting){
+    flags.push(
+      '<span class="ms-status-flag ms-status-flag--green" title="Ready for prod — Awaiting Release" role="img" aria-label="Ready for prod">⚑</span>'
+    );
+  }
+  if(dueSoon){
+    flags.push(
+      '<span class="ms-status-flag ms-status-flag--red" title="Due within ' + MS_CONTENT_DUE_SOON_CALENDAR_DAYS + ' calendar days — check MS progress" role="img" aria-label="Due soon">⚑</span>'
+    );
+  }
+
+  const chip = '<span class="'+chipClasses.join(' ')+'" title="'+escapeAttr(title)+'">'+escapeHtml(status)+'</span>';
+  if(!flags.length){
+    return chip;
+  }
+  return '<span class="ms-status-wrap">'+chip+flags.join('')+'</span>';
+}
+
 const MS_PROGRESS_CHIPS = [
   { id: 'status', label: 'Status', onKey: 'statusMoved', reason: 'Status moved' },
   { id: 'subtask', label: 'Subtask', onKey: 'hasSub', reason: 'Subtask created' },
@@ -1238,7 +1295,7 @@ function renderContentListHtml(tickets){
       return '<tr'+(soft ? ' class="ms-checkin-row"' : '')+'>' +
         '<td class="primary">'+keyHtml+softHint+'</td>' +
         '<td class="content-summary">'+escapeHtml(t.summary || '')+'</td>' +
-        '<td>'+escapeHtml(t.status || '—')+'</td>' +
+        '<td class="ms-status-cell">'+renderContentStatusCell(t)+'</td>' +
         '<td class="ms-progress-cell">'+renderContentMotionCell(t)+'</td>' +
         '<td>'+(t.assigneeName ? escapeHtml(t.assigneeName) : '—')+'</td>' +
         '<td>'+escapeHtml(contentDueLabel(t.dueDate))+'</td>' +
@@ -1272,7 +1329,41 @@ function trReviewApi(){
   return globalThis.TranslationsReview || null;
 }
 
-function renderClosedTranslationsCell(t){
+function trStatusChip(label, variant, opts){
+  const tag = opts && opts.button ? 'button' : 'span';
+  const attrs = opts && opts.button
+    ? ' type="button" class="tr-status-chip tr-status-chip--'+variant+'"'+(opts.extraAttrs || '')
+    : ' class="tr-status-chip tr-status-chip--'+variant+'"'+(opts && opts.extraAttrs ? opts.extraAttrs : '');
+  const open = '<'+tag+attrs+'>';
+  const close = '</'+tag+'>';
+  return open+escapeHtml(label)+close;
+}
+
+function trNotNeededChip(key){
+  return trStatusChip('Not needed', 'opt-out', {
+    button: true,
+    extraAttrs: ' data-tr-choice="not-needed" data-tr-key="'+key+'"'
+  });
+}
+
+function trNeededChip(key){
+  return trStatusChip('Needed', 'needed', {
+    button: true,
+    extraAttrs: ' data-tr-choice="needed" data-tr-key="'+key+'"'
+  });
+}
+
+function renderProdValCell(t){
+  const tr = trReviewApi();
+  if(!tr) return '<span class="tr-status-muted">—</span>';
+  const info = tr.closedTranslationsState(t);
+  if(info.state === 'awaiting-prodval'){
+    return '<span class="tr-phase-chip tr-phase-wait" title="Prod Validation subtask not closed yet">Validate</span>';
+  }
+  return '<span class="tr-phase-chip tr-phase-done" title="Prod Validation closed">Complete</span>';
+}
+
+function renderTranslationsCell(t){
   const tr = trReviewApi();
   if(!tr){
     return '<span class="tr-status-muted">—</span>';
@@ -1280,35 +1371,42 @@ function renderClosedTranslationsCell(t){
   const info = tr.closedTranslationsState(t);
   const label = tr.statusLabel(info);
   const key = escapeAttr(t.key);
-  let phaseChip = '';
+
   if(info.state === 'awaiting-prodval'){
-    phaseChip = '<span class="tr-phase-chip tr-phase-wait" title="Prod Validation subtask not closed yet">Validate</span>';
-  } else {
-    phaseChip = '<span class="tr-phase-chip tr-phase-done" title="Prod Validation closed">Done</span>';
+    return '<span class="tr-status-muted" title="Close Prod Validation first">—</span>';
   }
 
   let actionHtml = '';
   if(info.state === 'review'){
     actionHtml =
-      '<div class="tr-choice-row">' +
-        '<button type="button" class="tr-choice-btn tr-choice-needed" data-tr-choice="needed" data-tr-key="'+key+'">Needed</button>' +
-        '<button type="button" class="tr-choice-btn tr-choice-na" data-tr-choice="not-needed" data-tr-key="'+key+'">Not needed</button>' +
+      '<div class="tr-cell tr-cell--compact">' +
+        trStatusChip(label, 'review') +
+        trNeededChip(key) +
+        trNotNeededChip(key) +
       '</div>';
   } else if(info.state === 'all-closed'){
-    actionHtml = '<span class="tr-status-ok">All closed</span>';
-  } else if(info.state === 'pending'){
-    actionHtml = '<span class="pending-note tr-status-pending">● '+escapeHtml(label)+'</span>';
-    if(info.reason === 'needed-yours'){
-      actionHtml += '<button type="button" class="tr-choice-btn tr-choice-na tr-choice-secondary" data-tr-choice="not-needed" data-tr-key="'+key+'">Not needed</button>';
+    if(info.reason === 'marked-not-needed'){
+      actionHtml =
+        '<div class="tr-cell tr-cell--compact">' +
+          trStatusChip('All closed', 'ok', {
+            button: true,
+            extraAttrs: ' data-tr-choice="clear" data-tr-key="'+key+'" title="Undo Not needed and re-check this ticket"'
+          }) +
+        '</div>';
+    } else {
+      actionHtml = '<div class="tr-cell tr-cell--compact">'+trStatusChip('All closed', 'ok')+'</div>';
     }
+  } else if(info.state === 'not-started'){
+    actionHtml = '<div class="tr-cell tr-cell--compact">'+trStatusChip(label, 'muted')+trNotNeededChip(key)+'</div>';
+  } else if(info.state === 'pending'){
+    actionHtml = '<div class="tr-cell tr-cell--compact">'+trStatusChip(label, 'progress')+trNotNeededChip(key)+'</div>';
   } else if(info.state === 'nudge-ms'){
-    actionHtml = '<span class="pending-note tr-status-nudge">● '+escapeHtml(label)+'</span>';
-    actionHtml += '<button type="button" class="tr-choice-btn tr-choice-na tr-choice-secondary" data-tr-choice="not-needed" data-tr-key="'+key+'">Not needed</button>';
+    actionHtml = '<div class="tr-cell tr-cell--compact">'+trStatusChip(label, 'nudge')+trNotNeededChip(key)+'</div>';
   } else {
-    actionHtml = '<span class="tr-status-muted">'+escapeHtml(label)+'</span>';
+    actionHtml = '<div class="tr-cell tr-cell--compact"><span class="tr-status-muted">'+escapeHtml(label)+'</span></div>';
   }
 
-  return '<div class="tr-cell">'+phaseChip+actionHtml+'</div>';
+  return actionHtml;
 }
 
 function bindClosedTranslationsChoices(container){
@@ -1333,7 +1431,8 @@ function bindClosedTranslationsChoices(container){
 function renderTable(){
   const wrap = document.getElementById('tableWrap');
   const isActive = STATE.tableMode === 'active';
-  const rows = isActive ? (STATE.data.activeTickets || []) : recentlyClosedRows();
+  const activeRows = (STATE.data.activeTickets || []).filter((t) => !isLaunchProgramTicket(t));
+  const rows = isActive ? activeRows : recentlyClosedRows();
 
   if(!rows.length){
     wrap.innerHTML = '<div class="empty-state"><b>Nothing here yet</b>'+(isActive?'No active requests right now.':'No recently closed tickets to show.')+'</div>';
@@ -1342,7 +1441,7 @@ function renderTable(){
 
   const cols = isActive
     ? [['key','Ticket'],['summary','Summary'],['priority','Priority'],['dueDate','Due Date'],['partner','Partner'],['publishEarly','Publish Early'],['stage','Current Stage']]
-    : [['key','Ticket'],['summary','Summary'],['priority','Priority'],['closedDate','Closed Date'],['translations','Translations']];
+    : [['key','Ticket'],['summary','Summary'],['priority','Priority'],['closedDate','Closed Date'],['prodVal','Prod Val'],['translations','Translations']];
 
   const html = '<table class="data-table"><thead><tr>' +
     cols.map(([k,label]) => '<th data-sort="'+k+'">'+label+'</th>').join('') +
@@ -1372,7 +1471,8 @@ function renderTable(){
         '<td>'+escapeHtml(t.summary)+'</td>' +
         '<td>'+(t.priority||'').replace(/^\d+ - /,'')+'</td>' +
         '<td>'+fmtDate(t.closedDate)+'</td>' +
-        '<td class="tr-col">'+renderClosedTranslationsCell(t)+'</td>' +
+        '<td class="tr-col tr-col-prodval">'+renderProdValCell(t)+'</td>' +
+        '<td class="tr-col">'+renderTranslationsCell(t)+'</td>' +
       '</tr>';
     }).join('') +
     '</tbody></table>';
@@ -1399,6 +1499,7 @@ const TEAM_VIEWS = {
 function openTeamSubtaskEntries(type){
   const entries = [];
   ((STATE.data && STATE.data.activeTickets) || []).forEach(t => {
+    if(isLaunchProgramTicket(t)) return;
     const st = (t.subtasks || []).find(s => s.type === type);
     if(st && st.status !== 'Closed') entries.push({ ticket: t, st });
   });
@@ -1464,7 +1565,7 @@ function renderTranslations(){
         '<td>'+escapeHtml(t.summary)+'</td>' +
         '<td>'+(t.priority||'').replace(/^\d+ - /,'')+'</td>' +
         '<td>'+fmtDate(t.closedDate)+'</td>' +
-        '<td class="tr-col">'+renderClosedTranslationsCell(t)+'</td>' +
+        '<td class="tr-col">'+renderTranslationsCell(t)+'</td>' +
       '</tr>';
     }).join('') +
     '</tbody></table>';
@@ -1518,6 +1619,8 @@ async function loadAll(spinning){
     if(el) el.textContent = LOADING_MESSAGES[msgIndex];
   }, 15000);
   try{
+    const tr = trReviewApi();
+    if(tr && tr.ensureChoicesSynced) await tr.ensureChoicesSynced();
     const data = normalizeFetchedData(await fetchJiraData());
     STATE.data = data;
     document.getElementById('greetingText').textContent =

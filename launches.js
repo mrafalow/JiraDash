@@ -2,18 +2,44 @@
    launches.js — Launches tab (epic routing + runbook checklist)
    ============================================================ */
 
-const LAUNCH_CHECK_STATES = ['not_started', 'in_progress', 'verified'];
+const LAUNCH_CHECK_STATES = ['not_started', 'in_progress', 'verified', 'na'];
 const LAUNCH_STATE_LABELS = {
   not_started: 'Not started',
   in_progress: 'In progress',
-  verified: 'Verified'
+  verified: 'Verified',
+  na: 'N/A'
+};
+
+const LAUNCH_PHASE_CHIP = {
+  preparation: 'launch-phase-chip--prep',
+  validation: 'launch-phase-chip--val',
+  launchDay: 'launch-phase-chip--day'
+};
+
+const LAUNCH_SECTION_CHIP = {
+  'dscribe-pro-prep': 'launch-sec-chip--authoring',
+  'prep-stakeholders': 'launch-sec-chip--prep',
+  'prep-look-only': 'launch-sec-chip--prep',
+  ids: 'launch-sec-chip--prep',
+  'prep-bell-content': 'launch-sec-chip--prep',
+  copy: 'launch-sec-chip--prep',
+  'validation-backend': 'launch-sec-chip--val',
+  'validation-testing': 'launch-sec-chip--val',
+  stage: 'launch-sec-chip--val',
+  'wait-room': 'launch-sec-chip--val',
+  dfm: 'launch-sec-chip--day',
+  'launch-day-run': 'launch-sec-chip--day',
+  prod: 'launch-sec-chip--day'
 };
 
 let launchProgressCache = {};
 let launchProgressLoaded = false;
 let launchExpandedKey = null;
-/** @type {Record<string, 'checklist'|'live'>} */
+/** @type {Record<string, 'checklist'|'embed'|'live'>} */
 let launchDetailView = {};
+/** @type {Record<string, boolean>} */
+let launchShowNaSections = {};
+const LAUNCH_META_KEY = '__meta';
 /** @type {Record<string, { loading?: boolean, error?: string, data?: object, showNa?: boolean }>} */
 let launchLiveState = {};
 
@@ -46,6 +72,9 @@ async function saveLaunchProgress() {
 }
 
 function launchProgressFor(epicKey, rowId) {
+  if (!rowId || rowId === LAUNCH_META_KEY) {
+    return { stage: 'not_started', prod: 'not_started' };
+  }
   const epic = launchProgressCache[epicKey] || {};
   const row = epic[rowId] || {};
   return {
@@ -55,9 +84,102 @@ function launchProgressFor(epicKey, rowId) {
 }
 
 function setLaunchProgress(epicKey, rowId, env, state) {
+  if (!rowId || rowId === LAUNCH_META_KEY) return;
   if (!launchProgressCache[epicKey]) launchProgressCache[epicKey] = {};
   if (!launchProgressCache[epicKey][rowId]) launchProgressCache[epicKey][rowId] = {};
   launchProgressCache[epicKey][rowId][env] = state;
+}
+
+function getLaunchMeta(epicKey) {
+  if (!launchProgressCache[epicKey]) launchProgressCache[epicKey] = {};
+  const epic = launchProgressCache[epicKey];
+  if (!epic[LAUNCH_META_KEY]) {
+    epic[LAUNCH_META_KEY] = { phases: {}, sections: {} };
+  }
+  return epic[LAUNCH_META_KEY];
+}
+
+function sectionsById(template) {
+  const map = {};
+  ((template && template.sections) || []).forEach((sec) => {
+    if (sec && sec.id) map[sec.id] = sec;
+  });
+  return map;
+}
+
+function sectionApplicableRows(section, launchType, config) {
+  if (!section || !sectionApplies(section, config)) return [];
+  return (section.rows || []).filter((row) => rowApplies(row, launchType, config));
+}
+
+function rowTrackEnv(row) {
+  const t = row && row.trackEnv ? row.trackEnv : 'both';
+  if (t === 'done' || t === 'stage' || t === 'prod') return t;
+  return 'both';
+}
+
+function envStateDone(state) {
+  return state === 'verified' || state === 'na';
+}
+
+function rowIsVerified(prog, row) {
+  const track = rowTrackEnv(row);
+  if (track === 'done' || track === 'stage') return envStateDone(prog.stage);
+  if (track === 'prod') return envStateDone(prog.prod);
+  return envStateDone(prog.stage) && envStateDone(prog.prod);
+}
+
+function rowVisualStateClass(prog, row) {
+  const track = rowTrackEnv(row);
+  const pick = (env) => prog[env] || 'not_started';
+  const states =
+    track === 'prod'
+      ? [pick('prod')]
+      : track === 'stage' || track === 'done'
+        ? [pick('stage')]
+        : [pick('stage'), pick('prod')];
+  if (states.every((s) => s === 'na')) return 'launch-check-row--na';
+  if (states.every((s) => envStateDone(s))) return 'launch-check-row--done';
+  if (states.some((s) => s === 'in_progress')) return 'launch-check-row--active';
+  if (states.some((s) => envStateDone(s))) return 'launch-check-row--partial';
+  return 'launch-check-row--todo';
+}
+
+function sectionChipClass(sectionId) {
+  return LAUNCH_SECTION_CHIP[sectionId] || 'launch-sec-chip--default';
+}
+
+function phaseChipClass(phaseId) {
+  return LAUNCH_PHASE_CHIP[phaseId] || 'launch-phase-chip--default';
+}
+
+function phaseProgressCounts(epicKey, phase, template, launchType, config) {
+  const secMap = sectionsById(template);
+  let total = 0;
+  let done = 0;
+  (phase.sectionIds || []).forEach((sid) => {
+    const sec = secMap[sid];
+    if (!sec) return;
+    const rows = sectionApplicableRows(sec, launchType, config);
+    rows.forEach((row) => {
+      total++;
+      if (rowIsVerified(launchProgressFor(epicKey, row.id), row)) done++;
+    });
+  });
+  return { total, done };
+}
+
+function sectionCollapsed(epicKey, sectionId, meta) {
+  const sec = meta.sections && meta.sections[sectionId];
+  return !!(sec && sec.collapsed);
+}
+
+function phaseMetaState(epicKey, phaseId, meta) {
+  const p = meta.phases && meta.phases[phaseId];
+  return {
+    complete: !!(p && p.complete),
+    collapsed: !!(p && p.collapsed)
+  };
 }
 
 function launchFlagEnabled(config, flagName) {
@@ -114,27 +236,168 @@ function launchDueHint(dueDate) {
   return 'In ' + days + 'd';
 }
 
-function renderCheckStateSelect(epicKey, rowId, env, current) {
-  const opts = LAUNCH_CHECK_STATES.map(
-    (s) =>
-      '<option value="' +
-      s +
-      '"' +
-      (s === current ? ' selected' : '') +
-      '>' +
-      LAUNCH_STATE_LABELS[s] +
-      '</option>'
-  ).join('');
+function mergeLaunchGuide(guide, helpFallback) {
+  const g = guide && typeof guide === 'object' ? Object.assign({}, guide) : {};
+  if (!g.objective && helpFallback) g.objective = String(helpFallback);
+  if (!g.objective && !(g.steps && g.steps.length) && !g.owner && !g.contact && !g.turnaround) {
+    return null;
+  }
+  return g;
+}
+
+function renderLaunchGuideHtml(guide, title, helpFallback) {
+  const g = mergeLaunchGuide(guide, helpFallback);
+  if (!g) return '';
+  let inner = '';
+  if (g.objective) {
+    inner += '<p class="launch-guide-lead">' + escapeHtml(g.objective) + '</p>';
+  }
+  if (g.owner) {
+    inner +=
+      '<p class="launch-guide-line"><span class="launch-guide-k">Who owns it</span> ' +
+      escapeHtml(g.owner) +
+      '</p>';
+  }
+  if (g.contact) {
+    inner +=
+      '<p class="launch-guide-line"><span class="launch-guide-k">Who to ping</span> ' +
+      escapeHtml(g.contact) +
+      '</p>';
+  }
+  if (g.turnaround) {
+    inner +=
+      '<p class="launch-guide-line"><span class="launch-guide-k">Typical timing</span> ' +
+      escapeHtml(g.turnaround) +
+      '</p>';
+  }
+  if (g.steps && g.steps.length) {
+    inner += '<ol class="launch-guide-steps">';
+    g.steps.forEach((step) => {
+      inner += '<li>' + escapeHtml(step) + '</li>';
+    });
+    inner += '</ol>';
+  }
+  const label = title ? 'About: ' + title : 'More info';
   return (
-    '<select class="launch-check-select" data-launch-progress="' +
+    '<details class="launch-guide">' +
+    '<summary class="launch-guide-btn" title="' +
+    escapeAttr(label) +
+    '" aria-label="' +
+    escapeAttr(label) +
+    '"><span class="launch-guide-icon" aria-hidden="true">i</span></summary>' +
+    '<div class="launch-guide-panel">' +
+    inner +
+    '</div></details>'
+  );
+}
+
+function renderCheckStateChipGroup(epicKey, rowId, env, current) {
+  const chips = LAUNCH_CHECK_STATES.map((s) => {
+    return (
+      '<button type="button" class="launch-status-chip launch-status-chip--' +
+      s +
+      (s === current ? ' is-active' : '') +
+      '" data-launch-progress="' +
+      escapeAttr(epicKey) +
+      '" data-row="' +
+      escapeAttr(rowId) +
+      '" data-env="' +
+      escapeAttr(env) +
+      '" data-value="' +
+      s +
+      '" aria-pressed="' +
+      (s === current ? 'true' : 'false') +
+      '">' +
+      escapeHtml(LAUNCH_STATE_LABELS[s]) +
+      '</button>'
+    );
+  }).join('');
+  return '<div class="launch-status-chips" role="group">' + chips + '</div>';
+}
+
+function renderPhaseCompleteSwitch(epicKey, phaseId, checked) {
+  return (
+    '<label class="launch-switch" title="Mark phase complete">' +
+    '<input type="checkbox" class="launch-switch-input" data-launch-phase-complete="' +
+    escapeAttr(phaseId) +
+    '" data-launch-key="' +
     escapeAttr(epicKey) +
-    '" data-row="' +
-    escapeAttr(rowId) +
-    '" data-env="' +
-    escapeAttr(env) +
-    '">' +
-    opts +
-    '</select>'
+    '"' +
+    (checked ? ' checked' : '') +
+    '>' +
+    '<span class="launch-switch-track" aria-hidden="true"><span class="launch-switch-thumb"></span></span>' +
+    '<span class="launch-switch-label">Phase complete</span></label>'
+  );
+}
+
+function parseRunbookDate(str) {
+  if (!str) return null;
+  const raw = String(str).trim();
+  const iso = new Date(raw);
+  if (!Number.isNaN(iso.getTime())) return atMidnight(iso);
+  const m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if (m) {
+    let y = parseInt(m[3], 10);
+    if (y < 100) y += 2000;
+    const d = new Date(y, parseInt(m[1], 10) - 1, parseInt(m[2], 10));
+    if (!Number.isNaN(d.getTime())) return atMidnight(d);
+  }
+  return null;
+}
+
+function isRunbookTaskComplete(status) {
+  const s = String(status || '').toLowerCase();
+  return s.includes('complete') || s.includes('done');
+}
+
+function computeLaunchScheduleStatus(epicKey) {
+  const st = launchLiveState[epicKey] || {};
+  if (st.loading && !st.data) {
+    return { level: 'unknown', label: 'Checking runbook dates…' };
+  }
+  if (!st.data || !st.data.tasks || !st.data.tasks.length) {
+    if (st.error) return { level: 'unknown', label: 'Runbook dates unavailable' };
+    return { level: 'unknown', label: '' };
+  }
+  const today = todayMid();
+  let overdue = 0;
+  let dueSoon = 0;
+  const SOON_BD = 3;
+  st.data.tasks.forEach((t) => {
+    if (t.isSectionHeader) return;
+    if (t.notApplicable || isRunbookTaskComplete(t.status)) return;
+    const s = String(t.status || '').toLowerCase();
+    if (s.includes('not applicable') || s === 'n/a') return;
+    const due = parseRunbookDate(t.dueDate) || parseRunbookDate(t.startDate);
+    if (!due) return;
+    const bd = businessDaysBetween(today, due);
+    if (bd < 0) overdue++;
+    else if (bd <= SOON_BD) dueSoon++;
+  });
+  if (overdue) {
+    return {
+      level: 'red',
+      label: overdue === 1 ? '1 overdue runbook task' : overdue + ' overdue runbook tasks'
+    };
+  }
+  if (dueSoon) {
+    return {
+      level: 'orange',
+      label: dueSoon === 1 ? 'Runbook task due soon' : dueSoon + ' runbook tasks due soon'
+    };
+  }
+  return { level: 'green', label: 'Runbook on track' };
+}
+
+function renderLaunchSchedulePill(epicKey) {
+  const st = computeLaunchScheduleStatus(epicKey);
+  if (!st.label) return '';
+  return (
+    '<span class="launch-schedule-pill launch-schedule-pill--' +
+    st.level +
+    '" title="From live Smartsheet due dates">' +
+    escapeHtml(st.label) +
+    '</span>'
   );
 }
 
@@ -142,21 +405,96 @@ function launchDetailViewFor(epicKey) {
   return launchDetailView[epicKey] || 'checklist';
 }
 
-function renderLaunchViewTabs(epicKey) {
+function renderLaunchViewTabs(epicKey, config) {
   const view = launchDetailViewFor(epicKey);
-  return (
+  const hasRunbook = !!(config && config.runbookUrl);
+  let html =
     '<div class="launch-view-tabs" role="tablist">' +
     '<button type="button" class="launch-view-tab' +
     (view === 'checklist' ? ' is-active' : '') +
     '" role="tab" data-launch-view="checklist" data-launch-key="' +
     escapeAttr(epicKey) +
-    '">GCx checklist</button>' +
+    '">GCx checklist</button>';
+  if (hasRunbook) {
+    html +=
+      '<button type="button" class="launch-view-tab' +
+      (view === 'embed' ? ' is-active' : '') +
+      '" role="tab" data-launch-view="embed" data-launch-key="' +
+      escapeAttr(epicKey) +
+      '">Smartsheet</button>';
+  }
+  html +=
     '<button type="button" class="launch-view-tab' +
     (view === 'live' ? ' is-active' : '') +
     '" role="tab" data-launch-view="live" data-launch-key="' +
     escapeAttr(epicKey) +
-    '">Live runbook</button>' +
-    '</div>'
+    '">Live runbook</button></div>';
+  return html;
+}
+
+function renderLaunchEmbedPanel(config) {
+  const url = config && config.runbookUrl;
+  if (!url) {
+    return '<p class="launch-hint">Add <code>runbookUrl</code> in launch runbook config.</p>';
+  }
+  return (
+    '<p class="launch-hint">Uses your Smartsheet login in this browser. If the frame stays blank, use <strong>Open runbook</strong>.</p>' +
+    '<div class="launch-embed-wrap">' +
+    '<iframe class="launch-embed-frame" title="Smartsheet runbook" src="' +
+    escapeHtml(url) +
+    '"></iframe></div>'
+  );
+}
+
+function renderLaunchTicketsBlock(epic) {
+  const rows = [];
+  const epicLink = jiraLink(epic.key);
+  rows.push({
+    kind: 'Epic',
+    key: epic.key,
+    summary: epic.summary || '',
+    status: epic.status || '',
+    due: launchDueHint(epic.dueDate)
+  });
+  (epic.milestones || []).forEach((m) => {
+    rows.push({
+      kind: milestoneLabel(m.milestoneKind),
+      key: m.key,
+      summary: m.summary || '',
+      status: m.status || '',
+      due: launchDueHint(m.dueDate)
+    });
+  });
+  if (!rows.length) return '';
+  const body = rows
+    .map((r) => {
+      const keyHtml = jiraLink(r.key)
+        ? '<a class="jira-link" href="' + jiraLink(r.key) + '" target="_blank" rel="noopener">' + escapeHtml(r.key) + '</a>'
+        : escapeHtml(r.key);
+      return (
+        '<tr><td class="launch-tickets-kind">' +
+        escapeHtml(r.kind) +
+        '</td><td class="primary">' +
+        keyHtml +
+        '</td><td>' +
+        escapeHtml(r.summary) +
+        '</td><td>' +
+        escapeHtml(r.status) +
+        '</td><td>' +
+        escapeHtml(r.due) +
+        '</td></tr>'
+      );
+    })
+    .join('');
+  return (
+    '<div class="launch-tickets-block">' +
+    '<div class="launch-tickets-head">Launch tickets</div>' +
+    '<p class="launch-tickets-hint">Keep the epic and milestone subtasks aligned with the runbook.</p>' +
+    '<table class="data-table launch-tickets-table"><thead><tr>' +
+    '<th>Type</th><th>Key</th><th>Summary</th><th>Status</th><th>Due</th>' +
+    '</tr></thead><tbody>' +
+    body +
+    '</tbody></table></div>'
   );
 }
 
@@ -279,11 +617,12 @@ function formatLaunchFetchedAt(iso) {
   }
 }
 
-async function loadLiveRunbook(epicKey, refresh) {
+async function loadLiveRunbook(epicKey, refresh, options) {
   if (!epicKey) return;
+  const silent = !!(options && options.silent);
   const prev = launchLiveState[epicKey] || {};
   launchLiveState[epicKey] = Object.assign({}, prev, { loading: true, error: null });
-  renderLaunchList();
+  if (!silent) renderLaunchList();
   const showNa = !!prev.showNa;
   const qs =
     'epic=' +
@@ -310,9 +649,112 @@ async function loadLiveRunbook(epicKey, refresh) {
   renderLaunchList();
 }
 
-function renderLaunchChecklist(epic, template) {
-  const config = epic.config || {};
-  const rows = applicableRows(template, epic.launchType || 'standardRestaurant', config);
+function renderCheckRowCols(epicKey, row, prog) {
+  const track = rowTrackEnv(row);
+  if (track === 'done' || track === 'stage') {
+    return (
+      '<div class="launch-check-cols">' +
+      '<span class="launch-check-col-label">' +
+      (track === 'done' ? 'Status' : 'Stage') +
+      '</span>' +
+      renderCheckStateChipGroup(epicKey, row.id, 'stage', prog.stage) +
+      '</div>'
+    );
+  }
+  if (track === 'prod') {
+    return (
+      '<div class="launch-check-cols">' +
+      '<span class="launch-check-col-label">Prod</span>' +
+      renderCheckStateChipGroup(epicKey, row.id, 'prod', prog.prod) +
+      '</div>'
+    );
+  }
+  return (
+    '<div class="launch-check-cols launch-check-cols--dual">' +
+    '<div class="launch-check-col-block">' +
+    '<span class="launch-check-col-label">Stage</span>' +
+    renderCheckStateChipGroup(epicKey, row.id, 'stage', prog.stage) +
+    '</div>' +
+    '<div class="launch-check-col-block">' +
+    '<span class="launch-check-col-label">Prod</span>' +
+    renderCheckStateChipGroup(epicKey, row.id, 'prod', prog.prod) +
+    '</div></div>'
+  );
+}
+
+function renderLaunchCheckRow(epic, row, config) {
+  const prog = launchProgressFor(epic.key, row.id);
+  const byRow = (config.plannedDatesByRow && config.plannedDatesByRow[row.id]) || null;
+  const planned =
+    byRow ||
+    (config.plannedDates &&
+      ((row.id === 'initial-details' && config.plannedDates.initialDetails) ||
+        (row.id === 'prod-bookings' && config.plannedDates.bookingsLaunch) ||
+        (row.id === 'prod-service' && config.plannedDates.serviceStart)));
+  const rowClass = rowVisualStateClass(prog, row);
+  return (
+    '<div class="launch-check-row ' +
+    rowClass +
+    '" data-row-id="' +
+    escapeAttr(row.id) +
+    '">' +
+    '<div class="launch-check-row-head">' +
+    '<span class="launch-check-label-wrap">' +
+    '<span class="launch-check-label">' +
+    escapeHtml(row.label) +
+    (row.optional ? ' <span class="launch-optional">(optional)</span>' : '') +
+    '</span>' +
+    renderLaunchGuideHtml(row.guide, row.label, row.help) +
+    '</span>' +
+    (planned ? '<span class="launch-planned-date">Plan: ' + escapeHtml(planned) + '</span>' : '') +
+    '</div>' +
+    renderCheckRowCols(epic.key, row, prog) +
+    '</div>'
+  );
+}
+
+function renderLaunchCheckSection(epic, section, rows, config, meta, showNa, phaseId) {
+  if (!rows.length && !showNa) return '';
+  const collapsed = sectionCollapsed(epic.key, section.id, meta);
+  const chip = sectionChipClass(section.id);
+  let html =
+    '<div class="launch-check-section' +
+    (collapsed ? ' launch-check-section--collapsed' : '') +
+    (rows.length ? '' : ' launch-check-section--na') +
+    '">';
+  html +=
+    '<div class="launch-check-section-head">' +
+    '<button type="button" class="launch-section-collapse" data-launch-section-toggle="' +
+    escapeAttr(section.id) +
+    '" data-launch-key="' +
+    escapeAttr(epic.key) +
+    '" aria-expanded="' +
+    (!collapsed ? 'true' : 'false') +
+    '">' +
+    '<span class="launch-section-chevron" aria-hidden="true"></span>' +
+    '<span class="launch-sec-chip ' +
+    chip +
+    '">' +
+    escapeHtml(section.title) +
+    '</span></button>' +
+    renderLaunchGuideHtml(section.guide, section.title, null) +
+    '</div>';
+  if (!rows.length) {
+    html += '<p class="launch-section-na">Not applicable for this launch.</p>';
+  } else if (!collapsed) {
+    if (section.guide && section.guide.objective) {
+      html += '<p class="launch-section-lead">' + escapeHtml(section.guide.objective) + '</p>';
+    }
+    rows.forEach((row) => {
+      html += renderLaunchCheckRow(epic, row, config);
+    });
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderLaunchChecklistFlat(epic, template, config, launchType) {
+  const rows = applicableRows(template, launchType, config);
   if (!rows.length) {
     return '<p class="launch-hint">No checklist rows for this launch type.</p>';
   }
@@ -321,48 +763,118 @@ function renderLaunchChecklist(epic, template) {
   rows.forEach(({ section, row }) => {
     if (section.title !== lastSec) {
       if (lastSec) html += '</div>';
+      html += '<div class="launch-check-section">';
       html +=
-        '<div class="launch-check-section"><div class="launch-check-section-title">' +
+        '<div class="launch-check-section-head">' +
+        '<div class="launch-check-section-title">' +
         escapeHtml(section.title) +
+        '</div>' +
+        renderLaunchGuideHtml(section.guide, section.title, null) +
         '</div>';
+      if (section.guide && section.guide.objective) {
+        html += '<p class="launch-section-lead">' + escapeHtml(section.guide.objective) + '</p>';
+      }
       lastSec = section.title;
     }
-    const prog = launchProgressFor(epic.key, row.id);
-    const byRow = (config.plannedDatesByRow && config.plannedDatesByRow[row.id]) || null;
-    const planned =
-      byRow ||
-      (config.plannedDates &&
-        ((row.id === 'initial-details' && config.plannedDates.initialDetails) ||
-          (row.id === 'prod-bookings' && config.plannedDates.bookingsLaunch) ||
-          (row.id === 'prod-service' && config.plannedDates.serviceStart)));
+    html += renderLaunchCheckRow(epic, row, config);
+  });
+  if (lastSec) html += '</div>';
+  html += '</div>';
+  return html;
+}
+
+function renderLaunchChecklist(epic, template) {
+  const config = epic.config || {};
+  const launchType = epic.launchType || 'standardRestaurant';
+  const phases = (template && template.phases) || [];
+  if (!phases.length) {
+    return renderLaunchChecklistFlat(epic, template, config, launchType);
+  }
+  const meta = getLaunchMeta(epic.key);
+  const showNa = !!launchShowNaSections[epic.key];
+  const secMap = sectionsById(template);
+  let html =
+    '<label class="launch-show-na"><input type="checkbox" data-launch-show-na="' +
+    escapeAttr(epic.key) +
+    '"' +
+    (showNa ? ' checked' : '') +
+    '> Show sections not applicable to this launch</label>';
+  const dashboardPhases = phases.filter((p) => p.id !== 'today');
+  html += '<div class="launch-phases">';
+  dashboardPhases.forEach((phase) => {
+    const counts = phaseProgressCounts(epic.key, phase, template, launchType, config);
+    const pct = counts.total ? Math.round((counts.done / counts.total) * 100) : 0;
+    const pstate = phaseMetaState(epic.key, phase.id, meta);
+    const manualComplete = pstate.complete;
+    const autoComplete = counts.total > 0 && counts.done === counts.total;
+    const completeClass =
+      manualComplete || autoComplete ? ' launch-phase--complete' : '';
+    const collapsed = pstate.collapsed && !manualComplete;
+    const applicableSections = [];
+    const naSections = [];
+    (phase.sectionIds || []).forEach((sid) => {
+      const sec = secMap[sid];
+      if (!sec) return;
+      const rows = sectionApplicableRows(sec, launchType, config);
+      if (rows.length) applicableSections.push({ sec, rows });
+      else if (showNa || sec.requiresLaunchFlag) naSections.push(sec);
+    });
+    if (!applicableSections.length && !naSections.length) return;
     html +=
-      '<div class="launch-check-row" data-row-id="' +
-      escapeAttr(row.id) +
+      '<div class="launch-phase' +
+      completeClass +
+      (collapsed ? ' launch-phase--collapsed' : '') +
+      '" data-phase-id="' +
+      escapeAttr(phase.id) +
+      '">';
+    html +=
+      '<div class="launch-phase-head">' +
+      '<button type="button" class="launch-phase-collapse" data-launch-phase-toggle="' +
+      escapeAttr(phase.id) +
+      '" data-launch-key="' +
+      escapeAttr(epic.key) +
+      '" aria-expanded="' +
+      (!collapsed ? 'true' : 'false') +
       '">' +
-      '<div class="launch-check-row-head">' +
-      '<span class="launch-check-label">' +
-      escapeHtml(row.label) +
-      (row.optional ? ' <span class="launch-optional">(optional)</span>' : '') +
+      '<span class="launch-phase-chevron" aria-hidden="true"></span>' +
+      '<span class="launch-phase-chip ' +
+      phaseChipClass(phase.id) +
+      '">' +
+      escapeHtml(phase.title) +
       '</span>' +
-      (planned ? '<span class="launch-planned-date">Plan: ' + escapeHtml(planned) + '</span>' : '') +
-      '</div>' +
-      '<div class="launch-check-cols">' +
-      '<label class="launch-check-col"><span>Stage</span>' +
-      renderCheckStateSelect(epic.key, row.id, 'stage', prog.stage) +
-      '</label>' +
-      '<label class="launch-check-col"><span>Prod</span>' +
-      renderCheckStateSelect(epic.key, row.id, 'prod', prog.prod) +
-      '</label>' +
+      (counts.total
+        ? '<span class="launch-phase-progress">' +
+          counts.done +
+          '/' +
+          counts.total +
+          '</span>'
+        : '') +
+      '</button>' +
+      renderLaunchGuideHtml(phase.guide, phase.title, null) +
+      renderPhaseCompleteSwitch(epic.key, phase.id, manualComplete) +
       '</div>';
-    if (row.help) {
+    if (counts.total) {
       html +=
-        '<details class="launch-check-help"><summary>Why / how</summary><p>' +
-        escapeHtml(row.help) +
-        '</p></details>';
+        '<div class="launch-phase-progress-bar" aria-hidden="true">' +
+        '<div class="launch-phase-progress-fill" style="width:' +
+        pct +
+        '%"></div></div>';
+    }
+    if (!collapsed) {
+      if (phase.guide && phase.guide.objective) {
+        html += '<p class="launch-phase-lead">' + escapeHtml(phase.guide.objective) + '</p>';
+      }
+      html += '<div class="launch-checklist">';
+      applicableSections.forEach(({ sec, rows }) => {
+        html += renderLaunchCheckSection(epic, sec, rows, config, meta, showNa, phase.id);
+      });
+      naSections.forEach((sec) => {
+        html += renderLaunchCheckSection(epic, sec, [], config, meta, true, phase.id);
+      });
+      html += '</div>';
     }
     html += '</div>';
   });
-  if (lastSec) html += '</div>';
   html += '</div>';
   return html;
 }
@@ -423,26 +935,8 @@ function renderLaunchCard(epic, template) {
       '</span>';
   }
 
-  let milestonesHtml = '';
-  (epic.milestones || []).forEach((m) => {
-    const mLink = jiraLink(m.key);
-    const label = milestoneLabel(m.milestoneKind);
-    milestonesHtml +=
-      '<div class="launch-milestone">' +
-      '<span class="launch-milestone-kind">' +
-      escapeHtml(label) +
-      '</span> ' +
-      (mLink
-        ? '<a class="jira-link" href="' + mLink + '" target="_blank" rel="noopener">' + escapeHtml(m.key) + '</a>'
-        : escapeHtml(m.key)) +
-      ' · ' +
-      escapeHtml(m.status || '') +
-      ' · Due ' +
-      escapeHtml(launchDueHint(m.dueDate)) +
-      '</div>';
-  });
-
   const bookingsM = (epic.milestones || []).find((m) => m.milestoneKind === 'bookings');
+  const detailView = launchDetailViewFor(epic.key);
   const badge = bookingsM && bookingsM.dueDate
     ? '<span class="launch-urgency">Bookings ' + escapeHtml(launchDueHint(bookingsM.dueDate)) + '</span>'
     : '';
@@ -460,6 +954,9 @@ function renderLaunchCard(epic, template) {
     '<div class="score-badge launch-badge" title="Launch epic">Launch</div>' +
     '</div>' +
     '<div class="ticket-main">' +
+    '<div class="launch-card-top">' +
+    renderLaunchSchedulePill(epic.key) +
+    '</div>' +
     '<div class="ticket-summary">' +
     summaryHtml +
     '</div>' +
@@ -476,15 +973,20 @@ function renderLaunchCard(epic, template) {
     '</div>' +
     (expanded
       ? '<div class="launch-detail">' +
-        (milestonesHtml ? '<div class="launch-milestones">' + milestonesHtml + '</div>' : '') +
-        renderLaunchViewTabs(epic.key) +
+        renderLaunchTicketsBlock(epic) +
+        renderLaunchViewTabs(epic.key, config) +
         '<div class="launch-view-panel' +
-        (launchDetailViewFor(epic.key) === 'checklist' ? '' : ' hidden') +
+        (detailView === 'checklist' ? '' : ' hidden') +
         '" data-launch-panel="checklist">' +
         renderLaunchChecklist(epic, template) +
         '</div>' +
         '<div class="launch-view-panel' +
-        (launchDetailViewFor(epic.key) === 'live' ? '' : ' hidden') +
+        (detailView === 'embed' ? '' : ' hidden') +
+        '" data-launch-panel="embed">' +
+        renderLaunchEmbedPanel(config) +
+        '</div>' +
+        '<div class="launch-view-panel' +
+        (detailView === 'live' ? '' : ' hidden') +
         '" data-launch-panel="live">' +
         renderLaunchLiveTable(epic.key) +
         '</div>' +
@@ -502,7 +1004,7 @@ function bindLaunchListEvents(root) {
     if (tab && root.contains(tab)) {
       const key = tab.getAttribute('data-launch-key');
       const view = tab.getAttribute('data-launch-view');
-      if (key && (view === 'checklist' || view === 'live')) {
+      if (key && (view === 'checklist' || view === 'embed' || view === 'live')) {
         launchDetailView[key] = view;
         renderLaunchList();
         if (view === 'live' && key && !(launchLiveState[key] && launchLiveState[key].data) && !launchLiveState[key]?.loading) {
@@ -511,10 +1013,49 @@ function bindLaunchListEvents(root) {
       }
       return;
     }
+    const phaseToggle = e.target.closest('[data-launch-phase-toggle]');
+    if (phaseToggle && root.contains(phaseToggle)) {
+      const key = phaseToggle.getAttribute('data-launch-key');
+      const phaseId = phaseToggle.getAttribute('data-launch-phase-toggle');
+      if (key && phaseId) {
+        const meta = getLaunchMeta(key);
+        if (!meta.phases[phaseId]) meta.phases[phaseId] = {};
+        meta.phases[phaseId].collapsed = !meta.phases[phaseId].collapsed;
+        saveLaunchProgress();
+        renderLaunchList();
+      }
+      return;
+    }
+    const secToggle = e.target.closest('[data-launch-section-toggle]');
+    if (secToggle && root.contains(secToggle)) {
+      const key = secToggle.getAttribute('data-launch-key');
+      const sectionId = secToggle.getAttribute('data-launch-section-toggle');
+      if (key && sectionId) {
+        const meta = getLaunchMeta(key);
+        if (!meta.sections[sectionId]) meta.sections[sectionId] = {};
+        meta.sections[sectionId].collapsed = !meta.sections[sectionId].collapsed;
+        saveLaunchProgress();
+        renderLaunchList();
+      }
+      return;
+    }
     const refreshBtn = e.target.closest('[data-launch-live-refresh]');
     if (refreshBtn && root.contains(refreshBtn)) {
       const key = refreshBtn.getAttribute('data-launch-live-refresh');
       if (key) loadLiveRunbook(key, true);
+      return;
+    }
+    const chip = e.target.closest('.launch-status-chip');
+    if (chip && root.contains(chip)) {
+      const epicKey = chip.getAttribute('data-launch-progress');
+      const rowId = chip.getAttribute('data-row');
+      const env = chip.getAttribute('data-env');
+      const val = chip.getAttribute('data-value');
+      if (!epicKey || !rowId || !env || !val) return;
+      if (!LAUNCH_CHECK_STATES.includes(val)) return;
+      setLaunchProgress(epicKey, rowId, env, val);
+      saveLaunchProgress();
+      renderLaunchList();
       return;
     }
     const toggle = e.target.closest('[data-launch-toggle]');
@@ -530,6 +1071,28 @@ function bindLaunchListEvents(root) {
     }
   });
   root.addEventListener('change', (e) => {
+    const phaseDone = e.target.closest('.launch-switch-input[data-launch-phase-complete]');
+    if (phaseDone && root.contains(phaseDone)) {
+      const key = phaseDone.getAttribute('data-launch-key');
+      const phaseId = phaseDone.getAttribute('data-launch-phase-complete');
+      if (key && phaseId) {
+        const meta = getLaunchMeta(key);
+        if (!meta.phases[phaseId]) meta.phases[phaseId] = {};
+        meta.phases[phaseId].complete = phaseDone.checked;
+        saveLaunchProgress();
+        renderLaunchList();
+      }
+      return;
+    }
+    const showNa = e.target.closest('[data-launch-show-na]');
+    if (showNa && root.contains(showNa)) {
+      const key = showNa.getAttribute('data-launch-show-na');
+      if (key) {
+        launchShowNaSections[key] = showNa.checked;
+        renderLaunchList();
+      }
+      return;
+    }
     const na = e.target.closest('[data-launch-live-na]');
     if (na && root.contains(na)) {
       const key = na.getAttribute('data-launch-live-na');
@@ -537,17 +1100,6 @@ function bindLaunchListEvents(root) {
       launchLiveState[key] = Object.assign({}, launchLiveState[key] || {}, { showNa: na.checked });
       loadLiveRunbook(key, false);
     }
-  });
-  root.addEventListener('change', (e) => {
-    const sel = e.target.closest('.launch-check-select');
-    if (!sel || !root.contains(sel)) return;
-    const epicKey = sel.getAttribute('data-launch-progress');
-    const rowId = sel.getAttribute('data-row');
-    const env = sel.getAttribute('data-env');
-    const val = sel.value;
-    if (!epicKey || !rowId || !env) return;
-    setLaunchProgress(epicKey, rowId, env, val);
-    saveLaunchProgress();
   });
 }
 
@@ -570,6 +1122,13 @@ async function renderLaunchList() {
   }
   container.innerHTML = epics.map((e) => renderLaunchCard(e, template)).join('');
   bindLaunchListEvents(container);
+  epics.forEach((e) => {
+    if (!e.config || !e.config.runbookUrl) return;
+    const st = launchLiveState[e.key] || {};
+    if (st.data || st.loading || st._prefetchAttempted) return;
+    launchLiveState[e.key] = Object.assign({}, st, { _prefetchAttempted: true });
+    loadLiveRunbook(e.key, false, { silent: true });
+  });
   const expanded = launchExpandedKey;
   if (
     expanded &&
