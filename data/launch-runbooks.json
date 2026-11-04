@@ -26,7 +26,8 @@
     },
     "launchFlags": {
       "needsDfm": false,
-      "needsWaitRoom": false
+      "needsWaitRoom": false,
+      "needsProDscribeChanges": false
     },
     "plannedDates": {
       "initialDetails": null,

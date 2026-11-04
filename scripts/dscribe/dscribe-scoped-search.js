@@ -28,6 +28,7 @@ function normalizeToken(s) {
 }
 
 function matchRank(querySlug, queryTitle, item) {
+  if (isExcludedCmsPath(item)) return { rank: 99, exact: false };
   const slug = normalizeToken(querySlug);
   const title = String(item.title || item.Title || '').trim();
   const titleNorm = normalizeToken(title);
@@ -55,19 +56,11 @@ function folderPathLabel(item) {
   return slice.join(' / ') || raw;
 }
 
+const urlAnchors = require('./validate-url-anchors.js');
+const { isExcludedCmsPath } = require('./dscribe-excluded-paths.js');
+
 function pathMentionsIndexable(it, contentKind) {
-  const id = String(it.id || it.Id || '');
-  if (id.endsWith('-64')) return true;
-  const path = String(it.path || it.Path || '').toLowerCase();
-  if (contentKind === 'entertainment') {
-    return path.includes('entertainment') || path.includes('things-to-do') || path.includes('dining');
-  }
-  return (
-    path.includes('dining') ||
-    path.includes('entertainment') ||
-    path.includes('events') ||
-    path.includes('things-to-do')
-  );
+  return urlAnchors.pathMentionsIndexableItem(it, contentKind);
 }
 
 async function fetchJson(path, cookie) {
@@ -197,7 +190,7 @@ function searchQueriesForSlug(slug, displayName, contentKind) {
     queries.push(displayName.replace(/\s+/g, ' ').trim());
     queries.push('Title:' + displayName.replace(/\s+/g, ' ').trim());
   }
-  if (contentKind === 'entertainment') {
+  if (urlAnchors.usesNonDiningIndexWarning(contentKind)) {
     queries.push(slug.replace(/-/g, ' '));
     queries.push(
       slug
@@ -240,6 +233,7 @@ async function searchCandidatesForPublication(
   const ranked = [];
   for (const it of items) {
     if (!itemAllowedInScope(pubKey, it)) continue;
+    if (isExcludedCmsPath(it)) continue;
     if (!pathMentionsIndexable(it, contentKind)) continue;
     const { rank, exact } = matchRank(slug, displayName, it);
     if (rank >= 99) continue;
@@ -343,7 +337,8 @@ function promotePrimaryFromCandidates(block, pubKey, contentKind, indexSlug, url
       const bbCands = list.filter(
         (c) =>
           c.itemKind === 'bb' ||
-          (String(c.tcmId || '').endsWith('-2') && !/personalization/i.test(String(c.name)))
+          (String(c.tcmId || '').endsWith('-2') &&
+            !isExcludedCmsPath({ title: c.name, folderPath: c.folderPath, path: c.folderPath }))
       );
       const best =
         bbCands.find((c) => /entertainment/.test(String(c.folderPath || '').toLowerCase())) ||

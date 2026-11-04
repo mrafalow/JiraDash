@@ -320,8 +320,7 @@ function enrichLaunchFlags(activeTickets, launchEpics) {
   });
   (activeTickets || []).forEach((t) => {
     t.isLaunchEpic = epicKeys.has(t.key);
-    t.isLaunchMilestone =
-      milestoneKeys.has(t.key) || (t.parentKey && epicKeys.has(t.parentKey));
+    t.isLaunchMilestone = milestoneKeys.has(t.key);
   });
 }
 

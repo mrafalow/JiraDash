@@ -1,7 +1,57 @@
 {
   "WDW-191147": {
     "facility-id": {
-      "stage": "in_progress"
+      "stage": "not_started"
+    },
+    "__meta": {
+      "phases": {
+        "today": {
+          "collapsed": false
+        },
+        "preparation": {
+          "complete": false,
+          "collapsed": false
+        },
+        "launchDay": {
+          "complete": false,
+          "collapsed": true
+        },
+        "validation": {
+          "collapsed": true
+        }
+      },
+      "sections": {
+        "today": {
+          "collapsed": false
+        },
+        "prep-bell-content": {
+          "collapsed": false
+        },
+        "dfm": {
+          "collapsed": false
+        },
+        "dscribe-pro-prep": {
+          "collapsed": true
+        },
+        "launch-day-run": {
+          "collapsed": false
+        },
+        "prod": {
+          "collapsed": true
+        }
+      }
+    },
+    "today-partner": {
+      "stage": "verified"
+    },
+    "prep-partner-outreach": {
+      "stage": "not_started"
+    },
+    "initial-details": {
+      "stage": "not_started"
+    },
+    "prep-reservations-date": {
+      "stage": "verified"
     }
   }
 }

@@ -486,6 +486,47 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if(pathname === '/api/translations/choices'){
+    const {
+      loadTranslationsChoices,
+      patchTranslationsChoice,
+      replaceTranslationsChoices,
+      applyChoicesPatch
+    } = require('./scripts/translations-data.js');
+    if(req.method === 'GET'){
+      sendJson(res, 200, loadTranslationsChoices());
+      return;
+    }
+    if(req.method === 'POST'){
+      readRequestBody(req).then((buf) => {
+        let body = {};
+        if(buf && buf.length){
+          try { body = JSON.parse(buf.toString('utf8')); } catch (_) { body = {}; }
+        }
+        if(!body || typeof body !== 'object'){
+          sendJson(res, 400, { ok: false, error: 'Expected JSON object.' });
+          return;
+        }
+        let saved;
+        if(body.ticketKey != null && body.ticketKey !== ''){
+          saved = patchTranslationsChoice(String(body.ticketKey), body.choice);
+        } else if(body.mode === 'replace' && body.choices && typeof body.choices === 'object'){
+          saved = replaceTranslationsChoices(body.choices);
+        } else {
+          saved = replaceTranslationsChoices(
+            applyChoicesPatch(loadTranslationsChoices(), body)
+          );
+        }
+        sendJson(res, 200, saved);
+      }).catch((err) => {
+        sendJson(res, 400, { ok: false, error: err && err.message ? err.message : String(err) });
+      });
+      return;
+    }
+    sendJson(res, 405, { ok: false, error: 'Method not allowed' });
+    return;
+  }
+
   if(pathname === '/api/launch/progress'){
     const { loadLaunchProgress, saveLaunchProgress } = require('./scripts/launch-data.js');
     if(req.method === 'GET'){
