@@ -428,8 +428,16 @@ const PR_REVIEW_TURNAROUND_DAYS = 1;
  * after MS handoff (prefer WDW→CONTENT key-change; else CONTENT created).
  */
 const MS_CHECKIN_CALENDAR_DAYS = 3;
-/** Hard MS publish watch: parent due within this many business days (or overdue), still with MS. */
+/** Default MS publish watch window (business days); overridden by Settings → MS publishing light. */
 const MS_STALL_DUE_WITHIN_DAYS = 3;
+
+function msPublishWatchDays(){
+  const ui = typeof globalThis !== 'undefined' && globalThis.STUDIO_TITAN_UI_CONFIG;
+  if(ui && typeof ui.MS_PUBLISH_ALERT_DAYS === 'number' && ui.MS_PUBLISH_ALERT_DAYS >= 0){
+    return Math.min(14, Math.floor(ui.MS_PUBLISH_ALERT_DAYS));
+  }
+  return MS_STALL_DUE_WITHIN_DAYS;
+}
 
 /** Calendar (not business) day delta from start → end at midnight. */
 function calendarDaysBetween(start, end){
@@ -569,15 +577,16 @@ function isMsStallHard(ticket, msSoloKeys){
   if(!ticket.dueDate) return false;
   const daysUntilDue = msStallBusinessDaysUntilDue(ticket);
   if(typeof daysUntilDue !== 'number' || !Number.isFinite(daysUntilDue)) return false;
-  return daysUntilDue <= MS_STALL_DUE_WITHIN_DAYS;
+  return daysUntilDue <= msPublishWatchDays();
 }
 
 function msStallReason(ticket){
   if(!ticket || !ticket.dueDate) return 'MS stall';
   const days = msStallBusinessDaysUntilDue(ticket);
+  const within = msPublishWatchDays();
   if(typeof days !== 'number') return 'MS stall';
   if(days < 0) return 'Past due — still with MS';
-  if(days <= MS_STALL_DUE_WITHIN_DAYS) return 'Due soon — still with MS';
+  if(days <= within) return 'Due soon — still with MS';
   return 'MS stall';
 }
 

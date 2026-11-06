@@ -248,8 +248,12 @@
             <input type="number" min="1" class="config-input" id="cfg_TRANSLATIONS_WINDOW">
           </div>
           <div class="config-row">
-            <div><div class="config-label">Publishing light — days ahead</div><div class="config-sub">Business days before due (same as Due “In Nd” on cards). 0 = due date only; use 2–4 for sensitive launches</div></div>
+            <div><div class="config-label">Publishing light — days ahead (your tickets)</div><div class="config-sub">WDW / MS Solo — business days before due. Mickey glows red or green from WF unlock. 0 = due date only</div></div>
             <input type="number" min="0" max="14" class="config-input" id="cfg_PUBLISH_ALERT_DAYS">
+          </div>
+          <div class="config-row">
+            <div><div class="config-label">MS publishing light — days ahead</div><div class="config-sub">CONTENT still with MS — business days before parent due. Silver Mickey + Needs Attention MS publish watch (toggle on that lane). 0 = due today only</div></div>
+            <input type="number" min="0" max="14" class="config-input" id="cfg_MS_PUBLISH_ALERT_DAYS">
           </div>
           <div class="config-actions">
             <button class="config-save-btn" id="configSaveBtn">Save</button>

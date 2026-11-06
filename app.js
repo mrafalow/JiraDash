@@ -500,6 +500,30 @@ function publishLightOffLabel(daysAhead){
   return 'Nothing publishing within '+daysAhead+' days';
 }
 
+function publishLightMsOffLabel(daysAhead){
+  if(!daysAhead) return 'No MS go-live today';
+  if(daysAhead === 1) return 'No MS go-live today or tomorrow';
+  return 'No MS go-live within '+daysAhead+' days';
+}
+
+function publishLightMsActiveLabel(msTickets){
+  const n = (msTickets || []).length;
+  if(!n) return 'MS go-live watch';
+  const todayN = msTickets.filter(t => {
+    const d = msStallBusinessDaysUntilDue(t);
+    return d === 0;
+  }).length;
+  if(todayN === n && n === 1) return 'MS go-live today';
+  if(todayN > 0) return 'MS go-live · '+todayN+' today'+(n > todayN ? ', '+ (n - todayN) +' more' : '');
+  return 'MS go-live · '+n+' in window';
+}
+
+function syncStudioTitanUiConfigGlobal(){
+  if(typeof globalThis !== 'undefined'){
+    globalThis.STUDIO_TITAN_UI_CONFIG = UI_CONFIG;
+  }
+}
+
 /** Due-date ascending list. Omit limit (or pass null) for the full list. */
 function horizonTickets(tickets, limit){
   const sorted = tickets
@@ -727,14 +751,23 @@ function renderBottomStrip(){
   STATE.waitingItems = waiting;
 
   const publishDaysAhead = UI_CONFIG.PUBLISH_ALERT_DAYS;
+  const msPublishDaysAhead = UI_CONFIG.MS_PUBLISH_ALERT_DAYS;
   const publishWindow = ticketsInPublishAlertWindow(tickets, publishDaysAhead);
+  const msPublishWindow = collectMsStallTickets(STATE.data);
   let publishState = 'off';
+  let publishLabel = publishLightOffLabel(publishDaysAhead);
   if(publishWindow.length){
     const anyUnapproved = publishWindow.some(t => {
       const wf = (t.subtasks||[]).find(s => s.type === 'WF');
       return !wf || wf.status !== 'Closed';
     });
     publishState = anyUnapproved ? 'red' : 'green';
+    publishLabel = publishState === 'green' ? 'Clear to publish' : 'Unlock needed — go now';
+  } else if(msPublishWindow.length){
+    publishState = 'silver';
+    publishLabel = publishLightMsActiveLabel(msPublishWindow);
+  } else {
+    publishLabel = publishLightOffLabel(publishDaysAhead);
   }
 
   const trActionCount = translationActionTickets().length;
@@ -759,7 +792,7 @@ function renderBottomStrip(){
         '<circle class="mouse-ear" cx="35" cy="12" r="9"/>' +
         '<circle class="mouse-face" cx="23" cy="28" r="14"/>' +
       '</svg>' +
-      '<div class="publish-light-label">'+(publishState==='off'?publishLightOffLabel(publishDaysAhead):publishState==='green'?'Clear to publish':'Unlock needed — go now')+'</div>' +
+      '<div class="publish-light-label'+(publishState==='silver'?' publish-light-label--ms':'')+'">'+escapeHtml(publishLabel)+'</div>' +
     '</div>' +
     strip('warning', 'var(--band-orange)', 'At Risk', atRisk.length, atRisk.length ? 'Behind expected pace' : 'All on pace', {
       id: 'atRiskStrip',
@@ -1661,10 +1694,10 @@ async function loadAll(spinning){
 }
 
 const BIZ_CONFIG_KEYS = ['RA_CREATE_BY','RA_CLOSE_BY','COND_CLOSE_BY','PR_TURNAROUND','TRANSLATIONS_WINDOW'];
-const UI_CONFIG_KEYS = ['PUBLISH_ALERT_DAYS'];
+const UI_CONFIG_KEYS = ['PUBLISH_ALERT_DAYS', 'MS_PUBLISH_ALERT_DAYS'];
 const CONFIG_KEYS = BIZ_CONFIG_KEYS.concat(UI_CONFIG_KEYS);
 const CONFIG_STORAGE_KEY = 'studio-titan-biz-config';
-const DEFAULT_UI_CONFIG = { PUBLISH_ALERT_DAYS: 0 };
+const DEFAULT_UI_CONFIG = { PUBLISH_ALERT_DAYS: 0, MS_PUBLISH_ALERT_DAYS: 3 };
 const UI_CONFIG = Object.assign({}, DEFAULT_UI_CONFIG);
 
 function loadSavedConfig(){
@@ -1676,10 +1709,14 @@ function loadSavedConfig(){
       if(typeof saved.PUBLISH_ALERT_DAYS === 'number' && saved.PUBLISH_ALERT_DAYS >= 0){
         UI_CONFIG.PUBLISH_ALERT_DAYS = Math.min(14, Math.floor(saved.PUBLISH_ALERT_DAYS));
       }
+      if(typeof saved.MS_PUBLISH_ALERT_DAYS === 'number' && saved.MS_PUBLISH_ALERT_DAYS >= 0){
+        UI_CONFIG.MS_PUBLISH_ALERT_DAYS = Math.min(14, Math.floor(saved.MS_PUBLISH_ALERT_DAYS));
+      }
     }
   } catch(err){
     // defaults
   }
+  syncStudioTitanUiConfigGlobal();
 }
 
 function populateConfigForm(){
@@ -1715,8 +1752,18 @@ function saveConfig(){
     return;
   }
   updated.PUBLISH_ALERT_DAYS = aheadVal;
+  const msAheadEl = document.getElementById('cfg_MS_PUBLISH_ALERT_DAYS');
+  const msAheadVal = msAheadEl ? parseInt(msAheadEl.value, 10) : DEFAULT_UI_CONFIG.MS_PUBLISH_ALERT_DAYS;
+  if(isNaN(msAheadVal) || msAheadVal < 0 || msAheadVal > 14){
+    document.getElementById('configSavedNote').textContent = 'MS publishing days ahead must be 0–14.';
+    document.getElementById('configSavedNote').style.color = 'var(--band-red)';
+    return;
+  }
+  updated.MS_PUBLISH_ALERT_DAYS = msAheadVal;
   BIZ_CONFIG_KEYS.forEach(k => { BIZ[k] = updated[k]; });
   UI_CONFIG.PUBLISH_ALERT_DAYS = aheadVal;
+  UI_CONFIG.MS_PUBLISH_ALERT_DAYS = msAheadVal;
+  syncStudioTitanUiConfigGlobal();
   try{
     localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(updated));
   } catch(err){
