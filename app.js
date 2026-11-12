@@ -35,15 +35,8 @@ function saveMsPublishWatchPref(on){
 }
 
 function sortAttentionScoredItems(items){
-  return items.slice().sort((a, b) => {
-    const sa = (a.scoring && a.scoring.score) || 0;
-    const sb = (b.scoring && b.scoring.score) || 0;
-    if(sb !== sa) return sb - sa;
-    const da = (a.scoring && typeof a.scoring.daysUntilDue === 'number') ? a.scoring.daysUntilDue : 999;
-    const db = (b.scoring && typeof b.scoring.daysUntilDue === 'number') ? b.scoring.daysUntilDue : 999;
-    if(da !== db) return da - db;
-    return String(a.t.key || '').localeCompare(String(b.t.key || ''));
-  });
+  const cmp = typeof compareScoredSoloItems === 'function' ? compareScoredSoloItems : null;
+  return cmp ? items.slice().sort(cmp) : items.slice();
 }
 
 function msPublishWatchToggleHtml(eligibleCount){
@@ -333,7 +326,7 @@ function renderTicketList(){
     const lane = classifySoloLane(t, model, scoring);
     const lanes = soloLanesForTicket(t, model, scoring);
     return { t, model, scoring, lane, lanes };
-  }).sort((a,b) => b.scoring.score - a.scoring.score);
+  }).sort(typeof compareScoredSoloItems === 'function' ? compareScoredSoloItems : (a, b) => b.scoring.score - a.scoring.score);
 
   // Dual-list: Attention+Waiting OK; Waiting+Action only when not Needs Attention.
   const byLane = { attention: [], action: [], waiting: [], 'pr-reviews': [] };

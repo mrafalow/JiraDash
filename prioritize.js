@@ -230,19 +230,55 @@ function buildStageModel(ticket){
 }
 
 /**
- * Due-urgency floor from parent due (business days — same basis as daysUntilDue).
- * Option C: displayed score = max(pipelineScore, dueUrgencyScore).
- * Tuned so Due In 2d (Attention band) badges ~45, not 0, and stays below a true 75.
+ * Due-urgency floor from parent due (business days).
+ * Moderate package: ramp 14d→15 … 7d→35 (see branch feature/moderate-prioritize-package).
+ * Near-term (≤2d) unchanged for Attention band tuning.
  */
+const DUE_URGENCY_BY_DAYS = {
+  14: 15, 13: 17, 12: 22, 11: 22, 10: 25, 9: 28, 8: 30, 7: 35, 6: 38, 5: 38,
+  4: 40, 3: 42, 2: 45, 1: 50, 0: 75
+};
+
 function dueUrgencyScore(daysUntilDue){
   if(typeof daysUntilDue !== 'number' || !Number.isFinite(daysUntilDue)) return 0;
   if(daysUntilDue <= -3) return 100;
   if(daysUntilDue === -2) return 95;
   if(daysUntilDue === -1) return 90;
-  if(daysUntilDue === 0) return 75;
-  if(daysUntilDue === 1) return 50;
-  if(daysUntilDue === 2) return 45;
-  return 0;
+  if(daysUntilDue > 14) return 0;
+  return DUE_URGENCY_BY_DAYS[daysUntilDue] != null ? DUE_URGENCY_BY_DAYS[daysUntilDue] : 0;
+}
+
+/** +bump when parent due ≤10bd and craft still open (any assignee) — publish path not clear. */
+const PUBLISH_CRAFT_RISK_BUMP = 20;
+const PUBLISH_CRAFT_RISK_WITHIN_BD = 10;
+const CRAFT_STAGE_TYPES = ['COPY', 'MEDIA', 'ALTTEXT'];
+
+function hasOpenNeededCraft(ticket, model){
+  if(!ticket || !model || model.scoringProfile === 'ms') return false;
+  const needed = model.needed || {};
+  const subs = ticket.subtasks || [];
+  return CRAFT_STAGE_TYPES.some(type => {
+    if(!needed[type]) return false;
+    const st = subs.find(s => s && s.type === type);
+    return !!(st && st.status !== 'Closed');
+  });
+}
+
+function publishCraftRiskBump(ticket, model, daysUntilDue){
+  if(typeof daysUntilDue !== 'number' || daysUntilDue > PUBLISH_CRAFT_RISK_WITHIN_BD) return 0;
+  if(!hasOpenNeededCraft(ticket, model)) return 0;
+  return PUBLISH_CRAFT_RISK_BUMP;
+}
+
+/** In Focus sort: score high→low, then sooner parent due, then key. */
+function compareScoredSoloItems(a, b){
+  const sa = (a.scoring && a.scoring.score) || 0;
+  const sb = (b.scoring && b.scoring.score) || 0;
+  if(sb !== sa) return sb - sa;
+  const da = (a.scoring && typeof a.scoring.daysUntilDue === 'number') ? a.scoring.daysUntilDue : 9999;
+  const db = (b.scoring && typeof b.scoring.daysUntilDue === 'number') ? b.scoring.daysUntilDue : 9999;
+  if(da !== db) return da - db;
+  return String((a.t && a.t.key) || '').localeCompare(String((b.t && b.t.key) || ''));
 }
 
 function bandForScore(score){
@@ -267,9 +303,17 @@ function computeScore(ticket, model){
   const priorityMult = PRIORITY_MULT[ticket.priority] || 1.0;
   const raw = model.stageGap * urgencyMult * SCORE_SCALE * priorityMult;
   const pipelineScore = Math.max(0, Math.min(100, Math.round(raw)));
-  const score = Math.max(pipelineScore, dueUrg);
+  const craftBump = publishCraftRiskBump(ticket, model, daysUntilDue);
+  const score = Math.min(100, Math.max(pipelineScore, dueUrg) + craftBump);
 
-  return { score, band: bandForScore(score), daysUntilDue };
+  return {
+    score,
+    band: bandForScore(score),
+    daysUntilDue,
+    pipelineScore,
+    dueUrgency: dueUrg,
+    publishCraftBump: craftBump
+  };
 }
 
 const BAND_COLOR = { red:'var(--band-red)', orange:'var(--band-orange)', gold:'var(--band-gold)', blue:'var(--band-blue)' };
@@ -303,9 +347,29 @@ function buildTag(ticket, model, scoring){
   return label + ' open · day ' + dayCount + ' of pipeline → Move ' + label + ' forward' + craftHint;
 }
 
+/** Alt Text / captions review — beat a misleading leading "PR |" in Jira summaries. */
+function summaryIndicatesAltText(summary){
+  if(!summary) return false;
+  const prefix = summary.split('|')[0].trim().toUpperCase();
+  if(prefix === 'RA' || prefix === 'COPY' || prefix === 'MEDIA' || prefix === 'WF') return false;
+  const t = String(summary).toLowerCase();
+  if(/\balt[\s-]*text\b/i.test(t)) return true;
+  if(/\balt[\s-]*text\s+and\s+captions\b/i.test(t)) return true;
+  if(/\bcaptions?\b/i.test(t) && /\balt[\s-]*text\b/i.test(t)) return true;
+  if(/\bcaptions?\b/i.test(t) && (/\breview\b/i.test(t) || /\bapprov/i.test(t))) return true;
+  return false;
+}
+
+function altTextLeadingPrefix(prefix){
+  const norm = String(prefix || '').toUpperCase().replace(/-/g, ' ').replace(/\s+/g, ' ').trim();
+  return norm.indexOf('ALT TEXT') === 0 || norm.indexOf('ALT TEXT AND CAPTION') === 0;
+}
+
 function classifySubtaskType(summary){
   if(!summary) return null;
+  if(summaryIndicatesAltText(summary)) return 'ALTTEXT';
   const prefix = summary.split('|')[0].trim().toUpperCase();
+  if(altTextLeadingPrefix(prefix)) return 'ALTTEXT';
   if(prefix === 'RA') return 'RA';
   if(prefix === 'PR') return 'PR';
   if(prefix === 'WF') return 'WF';
@@ -314,7 +378,6 @@ function classifySubtaskType(summary){
   if(prefix.indexOf('TRANSLATION') === 0) return 'TRANSLATIONS';
   if(prefix === 'COPY') return 'COPY';
   if(prefix === 'MEDIA') return 'MEDIA';
-  if(prefix.indexOf('ALT TEXT') === 0) return 'ALTTEXT';
   return null;
 }
 
@@ -1202,7 +1265,25 @@ function runPrioritizeFixtures(){
     fail('locationFromSummary: expected Columbia Harbour House / Magic Kingdom, got ' + JSON.stringify(loc));
   }
 
-  return { ok: true, cases: 5 };
+  const craftBlockedNearDue = {
+    key: 'FIX-5',
+    priority: '3 - Medium',
+    createdDate: isoDate(day0Old),
+    dueDate: isoDate(addBusinessDays(today, 9)),
+    subtasks: [
+      { type: 'RA', status: 'Open', description: '[x] Copy needed\n[x] Media needed\n[x] Alt text needed', createdDate: isoDate(day0Old), assigneeIsCurrentUser: true },
+      { type: 'COPY', status: 'Closed', createdDate: isoDate(day0Old), assigneeIsCurrentUser: true },
+      { type: 'MEDIA', status: 'In Progress', createdDate: isoDate(day0Old), assigneeIsCurrentUser: false },
+      { type: 'ALTTEXT', status: 'Open', createdDate: isoDate(day0Old), assigneeIsCurrentUser: false }
+    ]
+  };
+  const m5 = buildStageModel(craftBlockedNearDue);
+  const s5 = computeScore(craftBlockedNearDue, m5);
+  if(s5.publishCraftBump !== PUBLISH_CRAFT_RISK_BUMP) fail('craft bump expected ' + PUBLISH_CRAFT_RISK_BUMP);
+  if(s5.dueUrgency !== DUE_URGENCY_BY_DAYS[9]) fail('9bd due urgency expected ' + DUE_URGENCY_BY_DAYS[9]);
+  if(s5.score < 45) fail('craft blocked @9bd: score expected ≥45, got ' + s5.score);
+
+  return { ok: true, cases: 6 };
 }
 
 if(typeof module === 'object' && module.exports){
@@ -1213,6 +1294,11 @@ if(typeof module === 'object' && module.exports){
     buildWaitingNudge,
     locationFromSummary,
     locationPhraseFromSummary,
+    classifySubtaskType,
+    summaryIndicatesAltText,
+    compareScoredSoloItems,
+    dueUrgencyScore,
+    publishCraftRiskBump,
     BIZ,
     DEFAULT_BIZ,
     RA_CRAFT_BUFFER
