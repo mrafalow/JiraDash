@@ -9,7 +9,7 @@
     "test:jira": "node scripts/test-jira.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
     "dotenv": "^16.4.7"

@@ -116,3 +116,7 @@ docker run --rm -p 8080:8080 --env-file .env jira-dash
 ```
 
 Open http://localhost:8080/
+
+## Trivy failed — CRITICAL `tar` in Node image
+
+Launch scans the built image. Older `node:*-alpine` bundles **npm → tar 6.2.1**; fix is in `Dockerfile`: **Node 22 Alpine** plus `npm install -g npm@11.6.2` before `npm ci`. Push to GitLab `main` and redeploy if the scan still fails after a platform npm bump.
