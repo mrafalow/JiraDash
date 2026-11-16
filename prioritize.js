@@ -131,7 +131,8 @@ function buildStageModel(ticket){
     if(!subtasksByType[st.type]) subtasksByType[st.type] = [];
     subtasksByType[st.type].push(st);
   });
-  const get = (type) => (subtasksByType[type] || [])[0] || null;
+  const get = (type) => pickSubtaskForStage(subtasksByType[type]);
+  const listOf = (type) => subtasksByType[type] || [];
 
   let needed = { COPY:false, MEDIA:false, ALTTEXT:false };
   const ra = get('RA');
@@ -174,8 +175,13 @@ function buildStageModel(ticket){
       }
     });
   }
+  const prList = listOf('PR');
   const pr = get('PR');
-  checkpoints.push({ key:'PR closed', expectedBy: addBusinessDays(gateOpen, BIZ.PR_TURNAROUND), actualTrue: !!pr && pr.status === 'Closed' });
+  checkpoints.push({
+    key:'PR closed',
+    expectedBy: addBusinessDays(gateOpen, BIZ.PR_TURNAROUND),
+    actualTrue: stageListFullyClosed(prList)
+  });
 
   const wf = get('WF');
   checkpoints.push({ key:'WF closed', expectedBy: due, actualTrue: !!wf && wf.status === 'Closed' });
@@ -206,9 +212,10 @@ function buildStageModel(ticket){
   let currentOpen = null;
   for(const type of pipelineOrder){
     if(type !== 'RA' && type !== 'PR' && type !== 'WF' && type !== 'PRODVAL' && type !== 'TRANSLATIONS' && !needed[type]) continue;
-    const st = get(type);
-    if(!st){ currentOpen = { type, missing:true }; break; }
-    if(st.status !== 'Closed'){
+    const stageList = listOf(type);
+    if(!stageList.length){ currentOpen = { type, missing:true }; break; }
+    if(!stageListFullyClosed(stageList)){
+      const st = get(type);
       const cpKey = checkpointKeyForStageType(type);
       const cp = checkpoints.find(c => c.key === cpKey);
       currentOpen = {
@@ -365,10 +372,85 @@ function altTextLeadingPrefix(prefix){
   return norm.indexOf('ALT TEXT') === 0 || norm.indexOf('ALT TEXT AND CAPTION') === 0;
 }
 
+/**
+ * First pipe segment with optional round suffix: PR-2, PR - 2, PR 2, COPY-3, etc.
+ */
+function parseLeadingSubtaskSegment(summary){
+  let seg = String(summary || '').split('|')[0].trim();
+  if(!seg) return { stem: '', round: null };
+  let round = null;
+  const glued = seg.match(/^(.+?)[-–—](\d+)$/);
+  if(glued){
+    const stemCandidate = glued[1].trim();
+    if(!/^alt\s*text/i.test(stemCandidate) && !/^prod\s+validation/i.test(stemCandidate)){
+      seg = stemCandidate;
+      round = parseInt(glued[2], 10);
+    }
+  }
+  if(round == null){
+    const dashed = seg.match(/^(.+?)\s+[-–—]\s*(\d+)\s*$/);
+    if(dashed){
+      seg = dashed[1].trim();
+      round = parseInt(dashed[2], 10);
+    }
+  }
+  if(round == null){
+    const spaced = seg.match(/^(PR|RA|COPY|MEDIA|WF|PROD(?:\s+VALIDATION)?|TRANSLATION\w*)\s+(\d+)$/i);
+    if(spaced){
+      seg = spaced[1].trim();
+      round = parseInt(spaced[2], 10);
+    }
+  }
+  return { stem: seg, round: Number.isFinite(round) ? round : null };
+}
+
+function subtaskStageRound(st){
+  if(st && st.stageRound != null && st.stageRound > 0) return st.stageRound;
+  const parsed = parseLeadingSubtaskSegment(st && st.summary);
+  return parsed.round;
+}
+
+function subtaskDisplayLabel(st){
+  if(!st) return 'Subtask';
+  const type = st.type;
+  let label = (type && STAGE_LABELS[type]) || type;
+  if(!label){
+    const stem = parseLeadingSubtaskSegment(st.summary).stem;
+    label = stem || 'Subtask';
+  }
+  const round = subtaskStageRound(st);
+  if(round != null && round > 1) return label + '-' + round;
+  if(round === 1) return label;
+  return label;
+}
+
+/** Prefer open subtask; tie-break higher round then newer. */
+function pickSubtaskForStage(list){
+  if(!list || !list.length) return null;
+  const rank = (st) => {
+    const open = st.status !== 'Closed' ? 1 : 0;
+    const round = subtaskStageRound(st) || 0;
+    const created = st.createdDate ? atMidnight(st.createdDate).getTime() : 0;
+    return { open, round, created };
+  };
+  return list.slice().sort((a, b) => {
+    const ra = rank(a);
+    const rb = rank(b);
+    if(rb.open !== ra.open) return rb.open - ra.open;
+    if(rb.round !== ra.round) return rb.round - ra.round;
+    return rb.created - ra.created;
+  })[0];
+}
+
+function stageListFullyClosed(list){
+  return !!(list && list.length && list.every(st => st && st.status === 'Closed'));
+}
+
 function classifySubtaskType(summary){
   if(!summary) return null;
   if(summaryIndicatesAltText(summary)) return 'ALTTEXT';
-  const prefix = summary.split('|')[0].trim().toUpperCase();
+  const { stem } = parseLeadingSubtaskSegment(summary);
+  const prefix = stem.toUpperCase();
   if(altTextLeadingPrefix(prefix)) return 'ALTTEXT';
   if(prefix === 'RA') return 'RA';
   if(prefix === 'PR') return 'PR';
@@ -385,7 +467,9 @@ function normalizeFetchedData(data){
   const fixTicket = (t) => {
     (t.subtasks || []).forEach(st => {
       const classified = classifySubtaskType(st.summary);
+      const parsed = parseLeadingSubtaskSegment(st.summary);
       st.type = classified || (st.type ? String(st.type).toUpperCase() : null);
+      if(parsed.round != null) st.stageRound = parsed.round;
     });
     return t;
   };
@@ -1296,6 +1380,8 @@ if(typeof module === 'object' && module.exports){
     locationPhraseFromSummary,
     classifySubtaskType,
     summaryIndicatesAltText,
+    parseLeadingSubtaskSegment,
+    subtaskDisplayLabel,
     compareScoredSoloItems,
     dueUrgencyScore,
     publishCraftRiskBump,

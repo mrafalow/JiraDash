@@ -149,9 +149,9 @@ function renderPrReviewCard({t, pr}){
 
   const subtaskRows = (t.subtasks || []).map(st => {
     const color = st.status === 'Closed' ? 'var(--green)' : (st.assigneeIsCurrentUser === false ? 'var(--band-orange)' : 'var(--band-blue)');
-    const label = STAGE_LABELS[st.type] || st.type;
+    const label = typeof subtaskDisplayLabel === 'function' ? subtaskDisplayLabel(st) : (STAGE_LABELS[st.type] || st.type || 'Subtask');
     const stLink = jiraLink(st.key);
-    const labelHtml = stLink ? '<a class="jira-link" href="'+stLink+'" target="_blank" rel="noopener">'+label+'</a>' : label;
+    const labelHtml = stLink ? '<a class="jira-link" href="'+stLink+'" target="_blank" rel="noopener">'+escapeHtml(label)+'</a>' : escapeHtml(label);
     const isThisPr = pr && st.key === pr.key;
     let tagText = st.status === 'Closed' ? 'Done' : (st.assigneeIsCurrentUser === false ? 'Waiting on ' + (st.assigneeName || 'other') : 'In progress');
     if(isThisPr && st.status !== 'Closed') tagText = 'Your quick review · 1-day SLA';
@@ -205,9 +205,9 @@ function renderTicketCard({t, model, scoring}){
 
   const subtaskRows = (t.subtasks || []).map(st => {
     const color = st.status === 'Closed' ? 'var(--green)' : (st.assigneeIsCurrentUser === false ? 'var(--band-orange)' : 'var(--band-blue)');
-    const label = STAGE_LABELS[st.type] || st.type;
+    const label = typeof subtaskDisplayLabel === 'function' ? subtaskDisplayLabel(st) : (STAGE_LABELS[st.type] || st.type || 'Subtask');
     const stLink = jiraLink(st.key);
-    const labelHtml = stLink ? '<a class="jira-link" href="'+stLink+'" target="_blank" rel="noopener">'+label+'</a>' : label;
+    const labelHtml = stLink ? '<a class="jira-link" href="'+stLink+'" target="_blank" rel="noopener">'+escapeHtml(label)+'</a>' : escapeHtml(label);
     let tagText = st.status === 'Closed' ? 'Done' : (st.assigneeIsCurrentUser === false ? 'Waiting on ' + (st.assigneeName || 'other') : 'In progress');
     return '<div class="subtask-row">' +
       '<span class="status-dot" style="background:'+color+'"></span>' +
@@ -1307,7 +1307,7 @@ function renderContentListHtml(tickets){
   }
   const msSoloKeys = msSoloKeySet(STATE.data);
   return '<table class="content-table"><thead><tr>' +
-    '<th>Key</th><th>Summary</th><th>Status</th><th>Progress</th><th>Assignee</th><th>Due</th><th>Partner</th>' +
+    '<th>Key</th><th>Summary</th><th>Status</th><th>Progress</th><th>Assignee</th><th>Due</th><th>Partner</th><th>Publish Early</th>' +
     '</tr></thead><tbody>' +
     tickets.map(t => {
       const tLink = jiraLink(t.key);
@@ -1326,6 +1326,7 @@ function renderContentListHtml(tickets){
         '<td>'+(t.assigneeName ? escapeHtml(t.assigneeName) : '—')+'</td>' +
         '<td>'+escapeHtml(contentDueLabel(t.dueDate))+'</td>' +
         '<td class="partner-cell">'+(t.partner ? formatPartnerCell(t.partner) : '—')+'</td>' +
+        '<td class="publish-early-cell">'+formatPublishEarlyCell(t.publishEarlyField)+'</td>' +
       '</tr>';
     }).join('') +
     '</tbody></table>';

@@ -385,6 +385,7 @@ function mapContentTicket(issue, currentAccountId, fieldIds){
     createdDate: datePrefix(f.created),
     dueDate: datePrefix(f.duedate),
     partner: partnerValue(f, ids.partnerField),
+    publishEarlyField: publishEarlyValue(f, ids.publishEarlyField),
     priority: mapPriority(f),
     hasRa: false,
     hasSubtasks: false,
@@ -508,7 +509,8 @@ async function fetchContentTickets(currentAccountId, fieldIds){
   const jql = (fieldIds && fieldIds.contentJql) || DEFAULT_CONTENT_JQL;
   const fields = [
     'summary', 'status', 'assignee', 'duedate', 'created', 'priority',
-    fieldIds.partnerField || DEFAULT_PARTNER_FIELD
+    fieldIds.partnerField || DEFAULT_PARTNER_FIELD,
+    fieldIds.publishEarlyField || DEFAULT_PUBLISH_EARLY_FIELD
   ];
   try{
     const issues = await jiraSearch(jql, fields, 50);
