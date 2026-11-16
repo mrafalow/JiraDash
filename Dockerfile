@@ -3,8 +3,8 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-# Base Node images ship npm with tar < 7.5.19 (CVE-2024-59873) — Trivy CRITICAL on Launch.
-RUN npm install -g npm@11.6.2 && npm cache clean --force
+# Trivy CRITICAL on tar < 7.5.19 (CVE-2026-59873). npm 11.x bundles tar 7.5.1; npm 12+ pulls ^7.5.22.
+RUN npm install -g npm@12.2.2 && npm cache clean --force
 
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
