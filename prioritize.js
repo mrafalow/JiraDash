@@ -607,6 +607,21 @@ function ticketHasRa(ticket){
   return (ticket.subtasks || []).some(st => st && st.type === 'RA');
 }
 
+/** MS portfolio — Prod Validation subtask (typed PRODVAL or summary contains "prod"). */
+function subtaskSummaryIndicatesProd(summary){
+  if(!summary) return false;
+  return /prod/i.test(String(summary));
+}
+
+function ticketHasProdValSubtask(ticket){
+  if(!ticket) return false;
+  return (ticket.subtasks || []).some(st => {
+    if(!st) return false;
+    if(st.type === 'PRODVAL') return true;
+    return subtaskSummaryIndicatesProd(st.summary);
+  });
+}
+
 /**
  * Parent statuses still on the starting line (CONTENT / MS portfolio).
  * Matches historical Studio Titan naming: Not Started, Open, To Do, Backlog.
@@ -635,20 +650,24 @@ function ticketHasAnySubtask(ticket){
  *   Status  — parent left start statuses (Not Started / Open / To Do / Backlog)
  *   Subtask — any subtask exists
  *   RA      — RA subtask exists
+ *   Prod    — Prod Validation subtask (summary contains "prod" or PRODVAL type)
  * Portfolio stays unscored — chips only.
  */
 function contentMotionState(ticket){
   const statusMoved = !isContentStartStatus(ticket && ticket.status);
   const hasSub = ticketHasAnySubtask(ticket);
   const hasRa = ticketHasRa(ticket);
+  const hasProdVal = ticketHasProdValSubtask(ticket);
   const reasons = [];
   if(statusMoved) reasons.push('Status moved');
   if(hasSub) reasons.push('Subtask created');
   if(hasRa) reasons.push('RA created');
-  const litCount = (statusMoved ? 1 : 0) + (hasSub ? 1 : 0) + (hasRa ? 1 : 0);
+  if(hasProdVal) reasons.push('Prod Validation subtask');
+  const litCount = (statusMoved ? 1 : 0) + (hasSub ? 1 : 0) + (hasRa ? 1 : 0) + (hasProdVal ? 1 : 0);
   // Legacy highest-wins position kept for callers that still read it.
   let position = 0;
-  if(hasRa) position = 3;
+  if(hasProdVal) position = 4;
+  else if(hasRa) position = 3;
   else if(hasSub) position = 2;
   else if(statusMoved) position = 1;
   return {
@@ -658,7 +677,8 @@ function contentMotionState(ticket){
     statusMoved,
     hasSub,
     hasRa,
-    stages: { status: statusMoved, subtask: hasSub, ra: hasRa },
+    hasProdVal,
+    stages: { status: statusMoved, subtask: hasSub, ra: hasRa, prodVal: hasProdVal },
     inMotion: litCount > 0
   };
 }

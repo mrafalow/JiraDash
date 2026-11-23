@@ -315,8 +315,11 @@ function sendJiraProxyResponse(res, cfg, result){
 function proxyJira(req, res, apiPathWithQuery){
   const cfg0 = getJiraConfig();
   if(cfg0.missing.length){
+    const where = process.env.NODE_ENV === 'production'
+      ? ' in Studioshare Launch → app Settings → Environment variables (then Redeploy). Do not commit secrets to git.'
+      : ' in .env (never commit this file).';
     sendJson(res, 503, {
-      message: 'Jira credentials missing. Set ' + cfg0.missing.join(', ') + ' in .env (never commit this file).',
+      message: 'Jira credentials missing. Set ' + cfg0.missing.join(', ') + where,
       missing: cfg0.missing
     });
     return;

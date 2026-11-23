@@ -281,7 +281,7 @@
   .ms-status-flag--red{
     color:var(--band-red);filter:drop-shadow(0 0 4px rgba(251,69,112,.45));
   }
-  .ms-progress-cell{white-space:nowrap;vertical-align:middle;min-width:148px;}
+  .ms-progress-cell{white-space:nowrap;vertical-align:middle;min-width:188px;}
   .ms-progress{display:inline-flex;align-items:center;vertical-align:middle;}
   .ms-progress-chips{display:inline-flex;align-items:center;gap:4px;}
   .ms-progress-chip{

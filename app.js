@@ -1271,7 +1271,8 @@ function renderContentStatusCell(ticket){
 const MS_PROGRESS_CHIPS = [
   { id: 'status', label: 'Status', onKey: 'statusMoved', reason: 'Status moved' },
   { id: 'subtask', label: 'Subtask', onKey: 'hasSub', reason: 'Subtask created' },
-  { id: 'ra', label: 'RA', onKey: 'hasRa', reason: 'RA created' }
+  { id: 'ra', label: 'RA', onKey: 'hasRa', reason: 'RA created' },
+  { id: 'prodval', label: 'Prod', onKey: 'hasProdVal', reason: 'Prod Validation subtask exists' }
 ];
 
 function renderContentMotionCell(ticket){
@@ -1280,7 +1281,7 @@ function renderContentMotionCell(ticket){
   const litLabels = MS_PROGRESS_CHIPS.filter(c => motion[c.onKey]).map(c => c.label);
   const aria = litLabels.length
     ? 'Progress: ' + litLabels.join(', ') + ' on'
-    : 'Progress: Status, Subtask, and RA off';
+    : 'Progress: Status, Subtask, RA, and Prod off';
   const chips = MS_PROGRESS_CHIPS.map(c => {
     const on = !!motion[c.onKey];
     return '<span class="ms-progress-chip'+(on?' is-on':'')+'" data-chip="'+c.id+'" title="'+escapeAttr(c.reason+(on?'':' — not yet'))+'">'+
